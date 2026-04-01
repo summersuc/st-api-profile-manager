@@ -211,10 +211,36 @@ function getCurrentGroup() {
     return buildGroups().find(group => group.key === uiState.activeGroupKey) ?? null;
 }
 
+function getEditorForm() {
+    const panelForm = dom.panelHost?.querySelector?.('[data-role="editor-form"]');
+    if (panelForm instanceof HTMLFormElement) {
+        return panelForm;
+    }
+
+    const rootForm = dom.root?.querySelector?.('[data-role="editor-form"]');
+    return rootForm instanceof HTMLFormElement ? rootForm : null;
+}
+
 function setStatus(message, type = 'success') {
     uiState.status = message;
     uiState.statusType = type;
     render();
+}
+
+function getMountTarget() {
+    return document.getElementById('rm_api_block') || document.getElementById('extensions_settings2');
+}
+
+function ensurePanelHost() {
+    let host = document.getElementById('api_profile_manager_panel_host');
+    if (!(host instanceof HTMLElement)) {
+        host = document.createElement('div');
+        host.id = 'api_profile_manager_panel_host';
+        host.className = 'api-profile-manager__panel-host';
+        document.body.append(host);
+    }
+    dom.panelHost = host;
+    return host;
 }
 
 function setOpen(value) {
@@ -330,7 +356,7 @@ function validateProfile(profile) {
 }
 
 function readEditorProfile() {
-    const form = dom.root.querySelector('[data-role="editor-form"]');
+    const form = getEditorForm();
     const base = getEditingProfile() ? clone(getEditingProfile()) : defaultProfile();
     if (!(form instanceof HTMLFormElement)) {
         return base;
@@ -352,11 +378,11 @@ function readEditorProfile() {
 }
 
 function syncEditorDraftFromForm() {
-    if (uiState.view !== 'editor' || !dom.root) {
+    if (uiState.view !== 'editor') {
         return;
     }
 
-    const form = dom.root.querySelector('[data-role="editor-form"]');
+    const form = getEditorForm();
     if (!(form instanceof HTMLFormElement)) {
         return;
     }
@@ -905,15 +931,11 @@ function renderSheet() {
     `;
 }
 
-function render() {
-    if (!dom.root) {
-        return;
-    }
-
-    dom.root.innerHTML = `
+function renderLauncher() {
+    return `
         <section class="api-profile-manager__launcher-card" aria-label="API管家入口">
             <div class="api-profile-manager__launcher-copy">
-                <span class="api-profile-manager__group-label">扩展入口</span>
+                <span class="api-profile-manager__group-label">API 页面入口</span>
                 <h3 class="api-profile-manager__group-name">API管家</h3>
                 <p class="api-profile-manager__meta">管理多个 API 配置、分组保存不同模型，并快速切换当前方案。</p>
             </div>
@@ -922,8 +944,99 @@ function render() {
                 <span>打开 API管家</span>
             </button>
         </section>
-        ${uiState.isOpen ? renderSheet() : ''}
     `;
+}
+
+function ensureInlineRoot() {
+    if (dom.root instanceof HTMLElement && dom.root.isConnected) {
+        return dom.root;
+    }
+
+    const existing = document.getElementById('api_profile_manager_root');
+    if (existing instanceof HTMLElement) {
+        dom.root = existing;
+        return existing;
+    }
+
+    const target = getMountTarget();
+    if (!(target instanceof HTMLElement)) {
+        return null;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.id = 'api_profile_manager';
+    wrapper.className = 'api-profile-manager api-profile-manager--hidden';
+    wrapper.setAttribute('aria-hidden', 'true');
+    wrapper.innerHTML = `
+        <div id="api_profile_manager_root" class="api-profile-manager__root"></div>
+        <input id="api_profile_manager_import_file" type="file" accept="application/json,.json" hidden />
+    `;
+    target.prepend(wrapper);
+
+    dom.root = wrapper.querySelector('#api_profile_manager_root');
+    if (!(dom.importFile instanceof HTMLInputElement) || !dom.importFile.isConnected) {
+        dom.importFile = wrapper.querySelector('#api_profile_manager_import_file');
+        if (dom.importFile instanceof HTMLInputElement) {
+            bindImportInput(dom.importFile);
+        }
+    }
+
+    return dom.root instanceof HTMLElement ? dom.root : null;
+}
+
+function bindSurfaceEvents(surface) {
+    if (!(surface instanceof HTMLElement) || surface.dataset.apmBound === 'true') {
+        return;
+    }
+
+    surface.addEventListener('click', event => {
+        handleClick(event).catch(error => {
+            console.error(`${MODULE_NAME}: click action failed`, error);
+            setStatus(error instanceof Error ? error.message : '操作失败', 'error');
+        });
+    });
+    surface.addEventListener('change', handleChange);
+    surface.addEventListener('input', handleInput);
+    surface.dataset.apmBound = 'true';
+}
+
+function bindImportInput(input) {
+    if (!(input instanceof HTMLInputElement) || input.dataset.apmBound === 'true') {
+        return;
+    }
+
+    input.addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            return;
+        }
+
+        try {
+            await importPayloadFromFile(file);
+        } catch (error) {
+            console.error(`${MODULE_NAME}: import failed`, error);
+            setStatus(error instanceof Error ? error.message : '导入失败', 'error');
+        } finally {
+            input.value = '';
+            render();
+        }
+    });
+    input.dataset.apmBound = 'true';
+}
+
+function render() {
+    const root = ensureInlineRoot();
+    const panelHost = ensurePanelHost();
+
+    if (!(root instanceof HTMLElement) || !(panelHost instanceof HTMLElement)) {
+        return;
+    }
+
+    root.innerHTML = renderLauncher();
+    panelHost.innerHTML = uiState.isOpen ? renderSheet() : '';
+
+    bindSurfaceEvents(root);
+    bindSurfaceEvents(panelHost);
 }
 
 async function handleClick(event) {
@@ -1043,7 +1156,7 @@ function handleChange(event) {
     }
 
     if (target.name === 'mode') {
-        const providerSelect = dom.root.querySelector('select[name="provider"]');
+        const providerSelect = getEditorForm()?.querySelector('select[name="provider"]');
         if (providerSelect instanceof HTMLSelectElement) {
             const options = getProviderOptions(target.value);
             providerSelect.innerHTML = options.map(option => `<option value="${option.value}">${escapeHtml(option.label)}</option>`).join('');
@@ -1054,47 +1167,39 @@ function handleChange(event) {
     }
 }
 
+function handleInput(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+        return;
+    }
+
+    if (uiState.view === 'editor') {
+        uiState.editorDraft = readEditorProfile();
+    }
+}
+
 jQuery(async () => {
-    const target = document.getElementById('rm_api_block') || document.getElementById('extensions_settings2');
+    const target = getMountTarget();
     if (!target) {
         console.warn(`${MODULE_NAME}: settings container not found`);
         return;
     }
 
     const html = await renderExtensionTemplateAsync(MODULE_NAME, 'settings', {});
-    target.insertAdjacentHTML('beforeend', html);
+    target.insertAdjacentHTML('afterbegin', html);
 
     dom.root = document.getElementById('api_profile_manager_root');
     dom.importFile = document.getElementById('api_profile_manager_import_file');
+    dom.panelHost = ensurePanelHost();
 
     if (!(dom.root instanceof HTMLElement) || !(dom.importFile instanceof HTMLInputElement)) {
         console.warn(`${MODULE_NAME}: mount root not found`);
         return;
     }
 
-    dom.root.addEventListener('click', event => {
-        handleClick(event).catch(error => {
-            console.error(`${MODULE_NAME}: click action failed`, error);
-            setStatus(error instanceof Error ? error.message : '操作失败', 'error');
-        });
-    });
-    dom.root.addEventListener('change', handleChange);
-    dom.importFile.addEventListener('change', async event => {
-        const file = event.target.files?.[0];
-        if (!file) {
-            return;
-        }
-
-        try {
-            await importPayloadFromFile(file);
-        } catch (error) {
-            console.error(`${MODULE_NAME}: import failed`, error);
-            setStatus(error instanceof Error ? error.message : '导入失败', 'error');
-        } finally {
-            dom.importFile.value = '';
-            render();
-        }
-    });
+    bindSurfaceEvents(dom.root);
+    bindSurfaceEvents(dom.panelHost);
+    bindImportInput(dom.importFile);
 
     getSettings();
     render();
