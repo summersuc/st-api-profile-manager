@@ -1,8 +1,8 @@
-# Security Notes
+# 安全说明
 
-- This extension stores profile data in SillyTavern client-side extension settings.
-- Key masking only hides the key in the visible form field.
-- Plain JSON export contains raw secrets.
-- Encrypted export uses PBKDF2 + AES-GCM through the browser Web Crypto API.
-- Encrypted export protects the backup file, not the live settings storage.
-- For stronger isolation, a server-side plugin or external secret manager would be required.
+- 本扩展把配置数据保存在 SillyTavern 的客户端扩展设置里。
+- “默认隐藏密钥”只是在界面上隐藏显示，不等于安全存储。
+- 明文导出的 JSON 会包含原始密钥。
+- 加密导出使用浏览器 Web Crypto API 的 PBKDF2 + AES-GCM。
+- 加密导出只能保护备份文件，不能保护 SillyTavern 当前正在使用的设置存储。
+- 如果你需要更强的隔离能力，需要额外实现服务端插件或外部密钥管理方案。
