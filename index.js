@@ -911,10 +911,17 @@ function render() {
     }
 
     dom.root.innerHTML = `
-        <button class="api-profile-manager__fab" data-action="open-panel" type="button" aria-label="打开 API管家">
-            <span class="api-profile-manager__fab-icon">API</span>
-            <span>API管家</span>
-        </button>
+        <section class="api-profile-manager__launcher-card" aria-label="API管家入口">
+            <div class="api-profile-manager__launcher-copy">
+                <span class="api-profile-manager__group-label">扩展入口</span>
+                <h3 class="api-profile-manager__group-name">API管家</h3>
+                <p class="api-profile-manager__meta">管理多个 API 配置、分组保存不同模型，并快速切换当前方案。</p>
+            </div>
+            <button class="api-profile-manager__fab api-profile-manager__fab--inline" data-action="open-panel" type="button" aria-label="打开 API管家">
+                <span class="api-profile-manager__fab-icon">API</span>
+                <span>打开 API管家</span>
+            </button>
+        </section>
         ${uiState.isOpen ? renderSheet() : ''}
     `;
 }
