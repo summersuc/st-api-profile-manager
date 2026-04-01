@@ -12,7 +12,7 @@ const MODULE_DIRECTORY = (() => {
 const MODULE_NAME = `third-party/${MODULE_DIRECTORY}`;
 
 const DEFAULT_SETTINGS = {
-    version: 1,
+    version: 2,
     activeProfileId: '',
     profiles: [],
     preferences: {
@@ -20,15 +20,20 @@ const DEFAULT_SETTINGS = {
     },
 };
 
+const MODE_OPTIONS = [
+    { value: 'chat-completions', label: '聊天补全' },
+    { value: 'text-generation', label: '文本生成' },
+];
+
 const PROVIDER_OPTIONS = {
     'chat-completions': [
-        { value: 'custom', label: 'Custom / Compatible' },
+        { value: 'custom', label: '兼容接口 / 自定义' },
         { value: 'openai', label: 'OpenAI' },
         { value: 'azure_openai', label: 'Azure OpenAI' },
     ],
     'text-generation': [
-        { value: 'generic', label: 'Generic' },
-        { value: 'ooba', label: 'ooba / text-generation-webui' },
+        { value: 'generic', label: '通用接口' },
+        { value: 'ooba', label: 'text-generation-webui' },
         { value: 'vllm', label: 'vLLM' },
         { value: 'aphrodite', label: 'Aphrodite' },
         { value: 'tabby', label: 'TabbyAPI' },
@@ -75,8 +80,17 @@ const TEXT_PROVIDER_CONFIG = {
 };
 
 const dom = {};
-let draftProfileId = '';
-let revealKey = false;
+
+const uiState = {
+    isOpen: false,
+    view: 'home',
+    activeGroupKey: '',
+    editingProfileId: '',
+    editorDraft: null,
+    status: '就绪',
+    statusType: 'success',
+    revealKey: false,
+};
 
 function clone(value) {
     return structuredClone(value);
@@ -86,9 +100,11 @@ function defaultProfile() {
     const timestamp = new Date().toISOString();
     return {
         id: crypto.randomUUID(),
+        groupName: '',
         mode: 'chat-completions',
         provider: 'custom',
         name: '',
+        model: '',
         baseUrl: '',
         apiKey: '',
         headerName: 'Authorization',
@@ -99,6 +115,19 @@ function defaultProfile() {
     };
 }
 
+function normalizeText(value) {
+    return String(value ?? '').trim();
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
 function getSettings() {
     if (!extension_settings.apiProfileManager) {
         extension_settings.apiProfileManager = clone(DEFAULT_SETTINGS);
@@ -106,223 +135,386 @@ function getSettings() {
 
     const settings = extension_settings.apiProfileManager;
     settings.version ??= DEFAULT_SETTINGS.version;
-    settings.activeProfileId ??= DEFAULT_SETTINGS.activeProfileId;
+    settings.activeProfileId ??= '';
     settings.profiles ??= [];
     settings.preferences ??= clone(DEFAULT_SETTINGS.preferences);
     settings.preferences.maskKeysByDefault ??= true;
+    settings.profiles = settings.profiles.map(profile => ({ ...defaultProfile(), ...profile, id: profile.id || crypto.randomUUID() }));
     return settings;
+}
+
+function persist() {
+    saveSettingsDebounced();
 }
 
 function getProfiles() {
     return getSettings().profiles;
 }
 
-function getSelectedProfile() {
-    return getProfiles().find(profile => profile.id === draftProfileId) ?? null;
+function getProfileById(profileId) {
+    return getProfiles().find(profile => profile.id === profileId) ?? null;
+}
+
+function getEditingProfile() {
+    return uiState.editorDraft ? clone(uiState.editorDraft) : getProfileById(uiState.editingProfileId) ?? null;
+}
+
+function getProviderOptions(mode) {
+    return PROVIDER_OPTIONS[mode] ?? PROVIDER_OPTIONS['chat-completions'];
+}
+
+function getProviderLabel(mode, provider) {
+    return getProviderOptions(mode).find(option => option.value === provider)?.label ?? provider;
+}
+
+function getModeLabel(mode) {
+    return MODE_OPTIONS.find(option => option.value === mode)?.label ?? mode;
+}
+
+function getGroupKey(profile) {
+    return normalizeText(profile.groupName) || normalizeText(profile.baseUrl) || '未命名分组';
+}
+
+function getGroupTitle(profile) {
+    return normalizeText(profile.groupName) || normalizeText(profile.baseUrl) || '未命名分组';
+}
+
+function buildGroups() {
+    const groups = new Map();
+
+    for (const profile of getProfiles()) {
+        const key = getGroupKey(profile);
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                title: getGroupTitle(profile),
+                baseUrl: profile.baseUrl,
+                profiles: [],
+            });
+        }
+        groups.get(key).profiles.push(profile);
+    }
+
+    return Array.from(groups.values())
+        .map(group => ({
+            ...group,
+            profiles: group.profiles.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+        }))
+        .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+}
+
+function getActiveProfile() {
+    return getProfileById(getSettings().activeProfileId);
+}
+
+function getCurrentGroup() {
+    return buildGroups().find(group => group.key === uiState.activeGroupKey) ?? null;
 }
 
 function setStatus(message, type = 'success') {
-    if (dom.status) {
-        dom.status.textContent = message;
-    }
-
-    if (dom.validation) {
-        dom.validation.textContent = message;
-        dom.validation.classList.remove('api-profile-manager__validation--error', 'api-profile-manager__validation--success');
-        dom.validation.classList.add(type === 'error' ? 'api-profile-manager__validation--error' : 'api-profile-manager__validation--success');
-    }
+    uiState.status = message;
+    uiState.statusType = type;
+    render();
 }
 
-function normalizeText(value) {
-    return String(value ?? '').trim();
+function setOpen(value) {
+    uiState.isOpen = value;
+    if (!value) {
+        uiState.view = 'home';
+        uiState.editingProfileId = '';
+        uiState.activeGroupKey = '';
+        uiState.editorDraft = null;
+        uiState.revealKey = false;
+    }
+    render();
 }
 
-function readDraftFromForm() {
-    const selected = getSelectedProfile();
-    const base = selected ? clone(selected) : defaultProfile();
-    base.mode = String(dom.mode.value);
-    base.provider = String(dom.provider.value);
-    base.name = normalizeText(dom.name.value);
-    base.baseUrl = normalizeText(dom.baseUrl.value).replace(/\/+$/u, '');
-    base.apiKey = String(dom.apiKey.value ?? '');
-    base.headerName = normalizeText(dom.headerName.value);
-    base.headerValue = String(dom.headerValue.value ?? '');
-    base.notes = String(dom.notes.value ?? '').trim();
-    base.updatedAt = new Date().toISOString();
-    return base;
+function goHome() {
+    syncEditorDraftFromForm();
+    uiState.view = 'home';
+    uiState.activeGroupKey = '';
+    uiState.editingProfileId = '';
+    uiState.editorDraft = null;
+    uiState.revealKey = !getSettings().preferences.maskKeysByDefault;
+    render();
+}
+
+function openGroup(groupKey) {
+    uiState.activeGroupKey = groupKey;
+    uiState.view = 'group';
+    render();
+}
+
+function openEditor(profileId = '', preset = {}) {
+    const existing = profileId ? getProfileById(profileId) : null;
+    const next = { ...defaultProfile(), ...preset, ...(existing ?? {}) };
+    uiState.editingProfileId = next.id;
+    uiState.editorDraft = next;
+    uiState.view = 'editor';
+    uiState.revealKey = !getSettings().preferences.maskKeysByDefault;
+
+    render();
+}
+
+function getProviderConfig(profile) {
+    return profile.mode === 'text-generation'
+        ? TEXT_PROVIDER_CONFIG[profile.provider] ?? null
+        : CHAT_PROVIDER_CONFIG[profile.provider] ?? null;
+}
+
+function setInputValue(selectors, value) {
+    for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+            continue;
+        }
+        element.value = value;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+    return false;
+}
+
+function setSelectValue(selector, value) {
+    const element = document.querySelector(selector);
+    if (!(element instanceof HTMLSelectElement)) {
+        return false;
+    }
+    element.value = value;
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+}
+
+function clickElement(selector) {
+    const element = document.querySelector(selector);
+    if (!(element instanceof HTMLElement)) {
+        return false;
+    }
+    element.click();
+    return true;
 }
 
 function validateProfile(profile) {
     if (!profile.mode || !PROVIDER_OPTIONS[profile.mode]) {
-        return 'Connection mode is required.';
+        return '请选择连接方式';
     }
 
     if (!profile.provider) {
-        return 'Provider is required.';
+        return '请选择接口类型';
     }
 
-    if (!profile.name) {
-        return 'Profile name is required.';
+    if (!normalizeText(profile.name)) {
+        return '请填写配置名称';
     }
 
-    const duplicate = getProfiles().find(item => item.id !== profile.id && item.name.toLocaleLowerCase() === profile.name.toLocaleLowerCase());
+    const duplicate = getProfiles().find(item => item.id !== profile.id && normalizeText(item.name).toLocaleLowerCase() === normalizeText(profile.name).toLocaleLowerCase());
     if (duplicate) {
-        return 'Profile name must be unique.';
+        return '配置名称不能重复';
     }
 
-    if (!profile.baseUrl) {
-        return 'Base URL is required.';
+    if (!normalizeText(profile.baseUrl)) {
+        return '请填写接口地址';
     }
 
     try {
         const url = new URL(profile.baseUrl);
         if (!['http:', 'https:'].includes(url.protocol)) {
-            return 'Base URL must use http or https.';
+            return '接口地址必须以 http 或 https 开头';
         }
     } catch {
-        return 'Base URL is not valid.';
+        return '接口地址格式不正确';
     }
 
     return '';
 }
 
-function fillForm(profile) {
-    const target = profile ?? defaultProfile();
-    dom.mode.value = target.mode;
-    populateProviderOptions(target.mode, target.provider);
-    dom.name.value = target.name;
-    dom.baseUrl.value = target.baseUrl;
-    dom.apiKey.value = target.apiKey;
-    dom.headerName.value = target.headerName;
-    dom.headerValue.value = target.headerValue;
-    dom.notes.value = target.notes;
-    updateSecretVisibility();
-}
-
-function updateProfileSelect() {
-    const settings = getSettings();
-    dom.select.innerHTML = '';
-
-    for (const profile of settings.profiles) {
-        const option = document.createElement('option');
-        option.value = profile.id;
-        option.textContent = profile.name || '(unnamed profile)';
-        if (profile.id === draftProfileId) {
-            option.selected = true;
-        }
-        dom.select.append(option);
+function readEditorProfile() {
+    const form = dom.root.querySelector('[data-role="editor-form"]');
+    const base = getEditingProfile() ? clone(getEditingProfile()) : defaultProfile();
+    if (!(form instanceof HTMLFormElement)) {
+        return base;
     }
 
-    if (!settings.profiles.length) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'No saved profiles yet';
-        option.selected = true;
-        dom.select.append(option);
-    }
+    const formData = new FormData(form);
+    base.groupName = normalizeText(formData.get('groupName'));
+    base.mode = String(formData.get('mode') || 'chat-completions');
+    base.provider = String(formData.get('provider') || getProviderOptions(base.mode)[0]?.value || 'custom');
+    base.name = normalizeText(formData.get('name'));
+    base.model = normalizeText(formData.get('model'));
+    base.baseUrl = normalizeText(formData.get('baseUrl')).replace(/\/+$/u, '');
+    base.apiKey = String(formData.get('apiKey') ?? '');
+    base.headerName = normalizeText(formData.get('headerName'));
+    base.headerValue = normalizeText(formData.get('headerValue'));
+    base.notes = normalizeText(formData.get('notes'));
+    base.updatedAt = new Date().toISOString();
+    return base;
 }
 
-function populateProviderOptions(mode, selectedValue = '') {
-    const options = PROVIDER_OPTIONS[mode] ?? PROVIDER_OPTIONS['chat-completions'];
-    dom.provider.innerHTML = '';
-
-    for (const optionData of options) {
-        const option = document.createElement('option');
-        option.value = optionData.value;
-        option.textContent = optionData.label;
-        if (selectedValue ? selectedValue === optionData.value : options[0]?.value === optionData.value) {
-            option.selected = true;
-        }
-        dom.provider.append(option);
-    }
-}
-
-function selectProfile(profileId) {
-    const settings = getSettings();
-    draftProfileId = profileId || settings.activeProfileId || settings.profiles[0]?.id || '';
-    const profile = getSelectedProfile();
-    fillForm(profile);
-    updateProfileSelect();
-}
-
-function persist() {
-    saveSettingsDebounced();
-    updateProfileSelect();
-}
-
-async function saveProfile() {
-    const settings = getSettings();
-    const profile = readDraftFromForm();
-    const validationError = validateProfile(profile);
-
-    if (validationError) {
-        setStatus(validationError, 'error');
+function syncEditorDraftFromForm() {
+    if (uiState.view !== 'editor' || !dom.root) {
         return;
     }
 
+    const form = dom.root.querySelector('[data-role="editor-form"]');
+    if (!(form instanceof HTMLFormElement)) {
+        return;
+    }
+
+    uiState.editorDraft = readEditorProfile();
+}
+
+function upsertProfile(profile) {
+    const settings = getSettings();
     const index = settings.profiles.findIndex(item => item.id === profile.id);
     if (index === -1) {
         settings.profiles.push(profile);
     } else {
         settings.profiles[index] = profile;
     }
-
-    if (!settings.activeProfileId) {
-        settings.activeProfileId = profile.id;
-    }
-
-    draftProfileId = profile.id;
-    persist();
-    setStatus('Profile saved.');
 }
 
-async function deleteProfile() {
-    const profile = getSelectedProfile();
+async function saveCurrentEditorProfile({ applyAfterSave = false } = {}) {
+    const profile = readEditorProfile();
+    const validationError = validateProfile(profile);
+    if (validationError) {
+        uiState.editorDraft = profile;
+        setStatus(validationError, 'error');
+        return false;
+    }
+
+    upsertProfile(profile);
+    uiState.editingProfileId = profile.id;
+    uiState.editorDraft = clone(profile);
+    persist();
+    setStatus(applyAfterSave ? `已保存并准备启用「${profile.name}」` : '配置已保存');
+
+    if (applyAfterSave) {
+        await applyProfile(profile.id);
+    } else {
+        openGroup(getGroupKey(profile));
+    }
+    return true;
+}
+
+async function deleteProfile(profileId) {
+    const profile = getProfileById(profileId);
     if (!profile) {
-        setStatus('Nothing to delete.', 'error');
+        setStatus('没有找到要删除的配置', 'error');
         return;
     }
 
-    const confirmed = await callGenericPopup(`Delete profile \"${profile.name || 'Unnamed'}\"?`, POPUP_TYPE.CONFIRM, '');
+    const confirmed = await callGenericPopup(`删除配置「${profile.name}」后无法恢复，是否继续？`, POPUP_TYPE.CONFIRM, '');
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE && confirmed !== true) {
         return;
     }
 
     const settings = getSettings();
-    settings.profiles = settings.profiles.filter(item => item.id !== profile.id);
-    if (settings.activeProfileId === profile.id) {
+    settings.profiles = settings.profiles.filter(item => item.id !== profileId);
+    if (settings.activeProfileId === profileId) {
         settings.activeProfileId = settings.profiles[0]?.id ?? '';
     }
-
-    extension_settings.apiProfileManager.profiles = settings.profiles;
-    extension_settings.apiProfileManager.activeProfileId = settings.activeProfileId;
-    draftProfileId = settings.activeProfileId;
     persist();
-    selectProfile(draftProfileId);
-    setStatus('Profile deleted.');
+
+    if (uiState.view === 'editor') {
+        uiState.editorDraft = null;
+        goHome();
+    } else if (uiState.view === 'group') {
+        const stillExists = getCurrentGroup();
+        if (!stillExists) {
+            goHome();
+        } else {
+            render();
+        }
+    } else {
+        render();
+    }
+
+    setStatus('配置已删除');
 }
 
-function duplicateProfile() {
-    const profile = getSelectedProfile();
-    const copy = profile ? clone(profile) : defaultProfile();
-    copy.id = crypto.randomUUID();
-    copy.name = profile?.name ? `${profile.name} Copy` : 'New Profile';
-    copy.createdAt = new Date().toISOString();
-    copy.updatedAt = copy.createdAt;
-    draftProfileId = copy.id;
-    fillForm(copy);
-    setStatus('Duplicated into draft. Save to keep it.');
+function duplicateProfile(profileId) {
+    const profile = getProfileById(profileId);
+    if (!profile) {
+        return;
+    }
+
+    const copy = {
+        ...clone(profile),
+        id: crypto.randomUUID(),
+        name: `${profile.name} 副本`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+
+    upsertProfile(copy);
+    persist();
+    openEditor(copy.id);
+    setStatus('已复制配置');
 }
 
-function resetDraft() {
-    fillForm(getSelectedProfile());
-    setStatus('Draft reset.');
+async function applyProfile(profileId) {
+    const profile = getProfileById(profileId);
+    if (!profile) {
+        setStatus('没有找到要启用的配置', 'error');
+        return;
+    }
+
+    const validationError = validateProfile(profile);
+    if (validationError) {
+        setStatus(validationError, 'error');
+        return;
+    }
+
+    const config = getProviderConfig(profile);
+    if (!config) {
+        setStatus('当前接口类型暂未接入自动切换', 'error');
+        return;
+    }
+
+    const settings = getSettings();
+    settings.activeProfileId = profile.id;
+    persist();
+
+    const mainApiApplied = setSelectValue('#main_api', profile.mode === 'text-generation' ? 'textgenerationwebui' : 'openai');
+    const sourceApplied = config.sourceSelector && config.sourceValue
+        ? setSelectValue(config.sourceSelector, config.sourceValue)
+        : config.typeSelector && config.typeValue
+            ? setSelectValue(config.typeSelector, config.typeValue)
+            : false;
+    const urlApplied = config.urlSelector ? setInputValue([config.urlSelector], profile.baseUrl) : false;
+    const visibleKeyApplied = config.secretKey ? setInputValue([`#${config.secretKey}`], profile.apiKey) : false;
+    let secretApplied = false;
+
+    if (config.secretKey) {
+        try {
+            await writeSecret(config.secretKey, profile.apiKey, profile.name || profile.provider, { allowEmpty: true });
+            secretApplied = true;
+        } catch (error) {
+            console.warn(`${MODULE_NAME}: writeSecret failed`, error);
+        }
+    }
+
+    const connectTriggered = config.connectButton ? clickElement(config.connectButton) : false;
+
+    if (mainApiApplied || sourceApplied || urlApplied || visibleKeyApplied || secretApplied || connectTriggered) {
+        setStatus(`已启用「${profile.name}」`);
+        render();
+    } else {
+        setStatus('已设为当前配置，但没有找到可自动填写的 SillyTavern 字段', 'error');
+    }
 }
 
-function updateSecretVisibility() {
-    const shouldReveal = revealKey;
-    dom.apiKey.type = shouldReveal ? 'text' : 'password';
-    dom.toggleKey.textContent = shouldReveal ? 'Hide' : 'Show';
+function exportPayload() {
+    const settings = getSettings();
+    return {
+        format: 'st-api-profile-manager',
+        version: settings.version,
+        activeProfileId: settings.activeProfileId,
+        preferences: settings.preferences,
+        profiles: settings.profiles,
+        exportedAt: new Date().toISOString(),
+    };
 }
 
 function encodeBase64(bytes) {
@@ -352,34 +544,22 @@ function downloadText(filename, text) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function exportPayload() {
-    const settings = getSettings();
-    return {
-        format: 'st-api-profile-manager',
-        version: settings.version,
-        activeProfileId: settings.activeProfileId,
-        preferences: settings.preferences,
-        profiles: settings.profiles,
-        exportedAt: new Date().toISOString(),
-    };
-}
-
 async function exportPlain() {
-    const confirmed = await callGenericPopup('Plain export contains raw keys. Continue?', POPUP_TYPE.CONFIRM, '');
+    const confirmed = await callGenericPopup('明文导出会包含原始 API 密钥，是否继续？', POPUP_TYPE.CONFIRM, '');
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE && confirmed !== true) {
         return;
     }
     downloadText('st-api-profiles.json', JSON.stringify(exportPayload(), null, 2));
-    setStatus('Plain JSON export downloaded.');
+    setStatus('已导出 JSON 备份');
 }
 
 async function exportEncrypted() {
     if (!window.crypto?.subtle) {
-        setStatus('Encrypted export is not supported in this client.', 'error');
+        setStatus('当前环境不支持加密导出', 'error');
         return;
     }
 
-    const password = await callGenericPopup('Enter a password for encrypted export', POPUP_TYPE.INPUT, '');
+    const password = await callGenericPopup('请输入导出密码', POPUP_TYPE.INPUT, '');
     if (!password || typeof password !== 'string') {
         return;
     }
@@ -399,7 +579,7 @@ async function exportEncrypted() {
         cipher: { name: 'AES-GCM', iv: encodeBase64(iv) },
         payload: encodeBase64(new Uint8Array(encrypted)),
     }, null, 2));
-    setStatus('Encrypted export downloaded.');
+    setStatus('已导出加密备份');
 }
 
 async function decryptPayload(imported, password) {
@@ -421,7 +601,7 @@ async function importPayloadFromFile(file) {
     let payload = imported;
 
     if (imported.encrypted) {
-        const password = await callGenericPopup('Enter the password for this backup', POPUP_TYPE.INPUT, '');
+        const password = await callGenericPopup('请输入备份密码', POPUP_TYPE.INPUT, '');
         if (!password || typeof password !== 'string') {
             return;
         }
@@ -429,7 +609,7 @@ async function importPayloadFromFile(file) {
     }
 
     if (!Array.isArray(payload.profiles)) {
-        throw new Error('Import file does not contain profiles.');
+        throw new Error('导入文件中没有配置数据');
     }
 
     const settings = getSettings();
@@ -438,195 +618,427 @@ async function importPayloadFromFile(file) {
         ? payload.activeProfileId
         : settings.profiles[0]?.id ?? '';
     settings.preferences = { ...settings.preferences, ...(payload.preferences ?? {}) };
-    extension_settings.apiProfileManager = settings;
     persist();
-    selectProfile(settings.activeProfileId);
-    setStatus(`Imported ${settings.profiles.length} profiles.`);
+    setStatus(`已导入 ${settings.profiles.length} 条配置`);
+    goHome();
 }
 
-function guessApplyTargets() {
-    return [
-        '#api_url_text',
-        '#openai_api_url',
-        '#custom_api_url',
-        'input[name="api_url"]',
-    ];
+function getHomeStats() {
+    const groups = buildGroups();
+    const activeProfile = getActiveProfile();
+    return {
+        groupCount: groups.length,
+        profileCount: getProfiles().length,
+        activeLabel: activeProfile?.name || '未启用',
+    };
 }
 
-function guessKeyTargets() {
-    return [
-        '#api_key_openai',
-        '#openai_api_key',
-        '#api_key',
-        'input[name="api_key"]',
-    ];
+function renderStats() {
+    const stats = getHomeStats();
+    return `
+        <div class="api-profile-manager__stats">
+            <article class="api-profile-manager__stat-card">
+                <span class="api-profile-manager__stat-label">分组数</span>
+                <span class="api-profile-manager__stat-value">${stats.groupCount}</span>
+            </article>
+            <article class="api-profile-manager__stat-card">
+                <span class="api-profile-manager__stat-label">配置数</span>
+                <span class="api-profile-manager__stat-value">${stats.profileCount}</span>
+            </article>
+            <article class="api-profile-manager__stat-card">
+                <span class="api-profile-manager__stat-label">当前启用</span>
+                <span class="api-profile-manager__stat-value">${escapeHtml(stats.activeLabel)}</span>
+            </article>
+        </div>
+    `;
 }
 
-function setInputValue(selectors, value) {
-    for (const selector of selectors) {
-        const element = document.querySelector(selector);
-        if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
-            continue;
-        }
-        element.value = value;
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-        element.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
-    }
-    return false;
-}
-
-function setSelectValue(selector, value) {
-    const element = document.querySelector(selector);
-    if (!(element instanceof HTMLSelectElement)) {
-        return false;
-    }
-
-    element.value = value;
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
-}
-
-function clickElement(selector) {
-    const element = document.querySelector(selector);
-    if (!(element instanceof HTMLElement)) {
-        return false;
+function renderHomeView() {
+    const groups = buildGroups();
+    if (!groups.length) {
+        return `
+            <section class="api-profile-manager__empty-state">
+                <div class="api-profile-manager__editor-card">
+                    <h3 class="api-profile-manager__editor-title">还没有接口配置</h3>
+                    <p class="api-profile-manager__empty">先新建一个配置。你可以把同一个接口地址下的不同模型放进同一分组里，之后切换会更快。</p>
+                    <button class="api-profile-manager__button api-profile-manager__button--primary api-profile-manager__button--full" data-action="new-profile">新建第一个配置</button>
+                </div>
+            </section>
+        `;
     }
 
-    element.click();
-    return true;
+    const activeProfile = getActiveProfile();
+    return `
+        <section class="api-profile-manager__home">
+            ${renderStats()}
+            <div class="api-profile-manager__section-head">
+                <div>
+                    <h3 class="api-profile-manager__section-title">配置分组</h3>
+                    <p class="api-profile-manager__section-subtitle">按分组管理多个接口配置，同一地址下也可以保存不同模型。</p>
+                </div>
+                <button class="api-profile-manager__button" data-action="open-tools">工具</button>
+            </div>
+            <div class="api-profile-manager__group-list">
+                ${groups.map(group => {
+                    const current = group.profiles.find(profile => profile.id === activeProfile?.id);
+                    const latest = group.profiles[0];
+                    return `
+                        <article class="api-profile-manager__group-card">
+                            <div class="api-profile-manager__group-top">
+                                <div>
+                                    <span class="api-profile-manager__group-label">分组</span>
+                                    <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
+                                    <p class="api-profile-manager__meta">${escapeHtml(group.baseUrl || '未设置接口地址')}</p>
+                                </div>
+                                <span class="api-profile-manager__pill">${group.profiles.length} 个配置</span>
+                            </div>
+                            <div class="api-profile-manager__group-badges">
+                                <span class="api-profile-manager__pill">最新：${escapeHtml(latest?.model || latest?.name || '未命名')}</span>
+                                <span class="api-profile-manager__pill">当前：${escapeHtml(current?.name || '无')}</span>
+                            </div>
+                            <div class="api-profile-manager__inline-actions">
+                                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="open-group" data-group-key="${escapeHtml(group.key)}">查看分组</button>
+                                <button class="api-profile-manager__button" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增配置</button>
+                            </div>
+                        </article>
+                    `;
+                }).join('')}
+            </div>
+        </section>
+    `;
 }
 
-function getProviderConfig(profile) {
-    return profile.mode === 'text-generation'
-        ? TEXT_PROVIDER_CONFIG[profile.provider] ?? null
-        : CHAT_PROVIDER_CONFIG[profile.provider] ?? null;
-}
-
-async function applyCurrentProfile() {
-    const profile = getSelectedProfile() ?? readDraftFromForm();
-    const validationError = validateProfile(profile);
-    if (validationError) {
-        setStatus(validationError, 'error');
-        return;
+function renderGroupView() {
+    const group = getCurrentGroup();
+    if (!group) {
+        return renderHomeView();
     }
 
+    const activeProfile = getActiveProfile();
+    return `
+        <section class="api-profile-manager__home">
+            <div class="api-profile-manager__section-head">
+                <div>
+                    <h3 class="api-profile-manager__section-title">${escapeHtml(group.title)}</h3>
+                    <p class="api-profile-manager__section-subtitle">${escapeHtml(group.baseUrl || '未设置接口地址')}</p>
+                </div>
+                <button class="api-profile-manager__button" data-action="back-home">返回首页</button>
+            </div>
+            <div class="api-profile-manager__profile-list">
+                ${group.profiles.map(profile => `
+                    <article class="api-profile-manager__profile-card">
+                        <div class="api-profile-manager__profile-top">
+                            <div>
+                                <span class="api-profile-manager__profile-label">${profile.id === activeProfile?.id ? '当前使用' : '已保存配置'}</span>
+                                <h3 class="api-profile-manager__profile-name">${escapeHtml(profile.name || '未命名配置')}</h3>
+                                <p class="api-profile-manager__meta">模型：${escapeHtml(profile.model || '未填写')} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))} · ${escapeHtml(getModeLabel(profile.mode))}</p>
+                            </div>
+                            <span class="api-profile-manager__pill">${escapeHtml(profile.updatedAt.slice(0, 10))}</span>
+                        </div>
+                        <div class="api-profile-manager__profile-badges">
+                            <span class="api-profile-manager__pill">地址：${escapeHtml(profile.baseUrl)}</span>
+                            ${profile.model ? `<span class="api-profile-manager__pill">模型：${escapeHtml(profile.model)}</span>` : ''}
+                        </div>
+                        <div class="api-profile-manager__profile-actions">
+                            <button class="api-profile-manager__profile-action api-profile-manager__profile-action--primary" data-action="apply-profile" data-profile-id="${profile.id}">启用</button>
+                            <button class="api-profile-manager__profile-action" data-action="edit-profile" data-profile-id="${profile.id}">编辑</button>
+                            <button class="api-profile-manager__profile-action" data-action="duplicate-profile" data-profile-id="${profile.id}">复制</button>
+                            <button class="api-profile-manager__profile-action api-profile-manager__profile-action--danger" data-action="delete-profile" data-profile-id="${profile.id}">删除</button>
+                        </div>
+                    </article>
+                `).join('')}
+            </div>
+            <div class="api-profile-manager__secondary-actions">
+                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">在此分组新增配置</button>
+            </div>
+        </section>
+    `;
+}
+
+function renderModeOptions(selectedMode) {
+    return MODE_OPTIONS.map(option => `<option value="${option.value}" ${option.value === selectedMode ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('');
+}
+
+function renderProviderOptions(selectedMode, selectedProvider) {
+    return getProviderOptions(selectedMode).map(option => `<option value="${option.value}" ${option.value === selectedProvider ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('');
+}
+
+function renderEditorView() {
+    const profile = getEditingProfile() ?? defaultProfile();
+    return `
+        <section class="api-profile-manager__editor">
+            <div class="api-profile-manager__section-head">
+                <div>
+                    <h3 class="api-profile-manager__section-title">${profile.name ? '编辑配置' : '新建配置'}</h3>
+                    <p class="api-profile-manager__section-subtitle">把同一接口地址下的不同模型放到同一分组，后面切换会更方便。</p>
+                </div>
+                <button class="api-profile-manager__button" data-action="back-from-editor">返回</button>
+            </div>
+            <form class="api-profile-manager__editor-card" data-role="editor-form">
+                <div class="api-profile-manager__field-grid">
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">分组名称</span>
+                        <input class="api-profile-manager__input" name="groupName" value="${escapeHtml(profile.groupName)}" placeholder="例如：OpenRouter 主账号">
+                        <span class="api-profile-manager__field-note">不填时会默认按接口地址自动分组。</span>
+                    </label>
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">配置名称</span>
+                        <input class="api-profile-manager__input" name="name" value="${escapeHtml(profile.name)}" placeholder="例如：Claude 3.7">
+                    </label>
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">模型名称</span>
+                        <input class="api-profile-manager__input" name="model" value="${escapeHtml(profile.model)}" placeholder="例如：claude-3-7-sonnet">
+                    </label>
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">接口地址</span>
+                        <input class="api-profile-manager__input" name="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://example.com/v1">
+                    </label>
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">连接方式</span>
+                        <select class="api-profile-manager__select" name="mode">${renderModeOptions(profile.mode)}</select>
+                    </label>
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">接口类型</span>
+                        <select class="api-profile-manager__select" name="provider">${renderProviderOptions(profile.mode, profile.provider)}</select>
+                    </label>
+                    <label class="api-profile-manager__field api-profile-manager__field--full">
+                        <span class="api-profile-manager__label">API 密钥</span>
+                        <div class="api-profile-manager__secret">
+                            <input class="api-profile-manager__input" name="apiKey" type="${uiState.revealKey ? 'text' : 'password'}" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off">
+                            <button class="api-profile-manager__button" type="button" data-action="toggle-key">${uiState.revealKey ? '隐藏' : '显示'}</button>
+                        </div>
+                    </label>
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">请求头名称</span>
+                        <input class="api-profile-manager__input" name="headerName" value="${escapeHtml(profile.headerName)}" placeholder="Authorization">
+                    </label>
+                    <label class="api-profile-manager__field">
+                        <span class="api-profile-manager__label">请求头值</span>
+                        <input class="api-profile-manager__input" name="headerValue" value="${escapeHtml(profile.headerValue)}" placeholder="Bearer ...">
+                    </label>
+                    <label class="api-profile-manager__field api-profile-manager__field--full">
+                        <span class="api-profile-manager__label">备注</span>
+                        <textarea class="api-profile-manager__textarea" name="notes" placeholder="给这个配置写一点说明，方便以后查找。">${escapeHtml(profile.notes)}</textarea>
+                    </label>
+                </div>
+            </form>
+            <div class="api-profile-manager__secondary-actions">
+                <button class="api-profile-manager__button" data-action="save-profile">保存</button>
+                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="save-and-apply">保存并启用</button>
+                ${profile.name || profile.groupName || profile.baseUrl ? `<button class="api-profile-manager__button api-profile-manager__button--danger" data-action="delete-profile" data-profile-id="${profile.id}">删除配置</button>` : ''}
+            </div>
+        </section>
+    `;
+}
+
+function renderToolsView() {
     const settings = getSettings();
-    settings.activeProfileId = profile.id;
-    persist();
+    return `
+        <section class="api-profile-manager__tools">
+            <div class="api-profile-manager__section-head">
+                <div>
+                    <h3 class="api-profile-manager__section-title">工具与备份</h3>
+                    <p class="api-profile-manager__section-subtitle">低频功能放在这里，首页只保留常用操作。</p>
+                </div>
+                <button class="api-profile-manager__button" data-action="back-home">返回首页</button>
+            </div>
+            <div class="api-profile-manager__tools-card">
+                <h4 class="api-profile-manager__tools-title">数据操作</h4>
+                <p class="api-profile-manager__tools-note">支持导入、明文导出和加密导出。加密导出只保护备份文件，不会把 SillyTavern 当前存储变成真正保险箱。</p>
+                <div class="api-profile-manager__tool-actions">
+                    <button class="api-profile-manager__button" data-action="import">导入备份</button>
+                    <button class="api-profile-manager__button" data-action="export-plain">导出 JSON</button>
+                    <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="export-encrypted">加密导出</button>
+                </div>
+            </div>
+            <div class="api-profile-manager__tools-card">
+                <h4 class="api-profile-manager__tools-title">显示偏好</h4>
+                <label class="api-profile-manager__checkbox">
+                    <input type="checkbox" data-action="toggle-mask-default" ${settings.preferences.maskKeysByDefault ? 'checked' : ''}>
+                    <span>默认隐藏密钥</span>
+                </label>
+            </div>
+        </section>
+    `;
+}
 
-    const config = getProviderConfig(profile);
-    if (!config) {
-        setStatus('This provider is not wired yet.', 'error');
+function renderContent() {
+    switch (uiState.view) {
+        case 'group':
+            return renderGroupView();
+        case 'editor':
+            return renderEditorView();
+        case 'tools':
+            return renderToolsView();
+        default:
+            return renderHomeView();
+    }
+}
+
+function renderSheet() {
+    return `
+        <div class="api-profile-manager__overlay" data-action="close-overlay">
+            <section class="api-profile-manager__sheet" aria-label="API管家面板" onclick="event.stopPropagation()">
+                <div class="api-profile-manager__grabber"></div>
+                <header class="api-profile-manager__hero">
+                    <div>
+                        <p class="api-profile-manager__eyebrow">API管家</p>
+                        <h2 class="api-profile-manager__title">${uiState.view === 'home' ? '接口配置首页' : uiState.view === 'group' ? '分组详情' : uiState.view === 'tools' ? '工具与备份' : '配置编辑'}</h2>
+                        <p class="api-profile-manager__subtitle">方便保存多个 API 配置、分组整理同地址多模型，并快速切换到你想用的方案。</p>
+                        <div class="api-profile-manager__status-bar ${uiState.statusType === 'error' ? 'is-error' : 'is-success'}">${escapeHtml(uiState.status)}</div>
+                    </div>
+                    <div class="api-profile-manager__hero-actions">
+                        <span class="api-profile-manager__pill">${escapeHtml(getActiveProfile()?.name || '未启用')}</span>
+                        <button class="api-profile-manager__sheet-close" data-action="close-panel" aria-label="关闭面板">×</button>
+                    </div>
+                </header>
+                <div class="api-profile-manager__content">${renderContent()}</div>
+                <footer class="api-profile-manager__footer">
+                    <div class="api-profile-manager__inline-actions">
+                        <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile">新建配置</button>
+                        <button class="api-profile-manager__button" data-action="open-tools">工具</button>
+                        <button class="api-profile-manager__button api-profile-manager__button--ghost" data-action="close-panel">关闭</button>
+                    </div>
+                </footer>
+            </section>
+        </div>
+    `;
+}
+
+function render() {
+    if (!dom.root) {
         return;
     }
 
-    const mainApiApplied = setSelectValue('#main_api', profile.mode === 'text-generation' ? 'textgenerationwebui' : 'openai');
-    const sourceApplied = config.sourceSelector && config.sourceValue
-        ? setSelectValue(config.sourceSelector, config.sourceValue)
-        : config.typeSelector && config.typeValue
-            ? setSelectValue(config.typeSelector, config.typeValue)
-            : false;
-    const urlApplied = config.urlSelector ? setInputValue([config.urlSelector], profile.baseUrl) : false;
-    const visibleKeyApplied = config.secretKey ? setInputValue([`#${config.secretKey}`], profile.apiKey) : false;
-    let secretApplied = false;
+    dom.root.innerHTML = `
+        <button class="api-profile-manager__fab" data-action="open-panel" type="button" aria-label="打开 API管家">
+            <span class="api-profile-manager__fab-icon">API</span>
+            <span>API管家</span>
+        </button>
+        ${uiState.isOpen ? renderSheet() : ''}
+    `;
+}
 
-    if (config.secretKey) {
-        try {
-            await writeSecret(config.secretKey, profile.apiKey, profile.name || profile.provider, { allowEmpty: true });
-            secretApplied = true;
-        } catch (error) {
-            console.warn(`${MODULE_NAME}: writeSecret failed`, error);
-        }
+async function handleClick(event) {
+    const button = event.target.closest('[data-action]');
+    if (!(button instanceof HTMLElement)) {
+        return;
     }
 
-    const connectTriggered = config.connectButton ? clickElement(config.connectButton) : false;
+    const action = button.dataset.action;
+    const profileId = button.dataset.profileId || '';
+    const groupKey = button.dataset.groupKey || '';
 
-    if (mainApiApplied || sourceApplied || urlApplied || visibleKeyApplied || secretApplied || connectTriggered) {
-        setStatus('Profile applied to SillyTavern connection settings.');
-    } else {
-        setStatus('Profile marked active, but no matching SillyTavern settings fields were found in the current UI.', 'error');
+    switch (action) {
+        case 'open-panel':
+            setOpen(true);
+            break;
+        case 'close-panel':
+        case 'close-overlay':
+            setOpen(false);
+            break;
+        case 'open-tools':
+            uiState.view = 'tools';
+            render();
+            break;
+        case 'back-home':
+            goHome();
+            break;
+        case 'open-group':
+            openGroup(groupKey);
+            break;
+        case 'new-profile':
+            openEditor('', {});
+            break;
+        case 'new-profile-in-group': {
+            const group = buildGroups().find(item => item.key === groupKey);
+            openEditor('', {
+                groupName: group?.profiles[0]?.groupName || group?.title || '',
+                baseUrl: group?.baseUrl || '',
+                mode: group?.profiles[0]?.mode || 'chat-completions',
+                provider: group?.profiles[0]?.provider || 'custom',
+                headerName: group?.profiles[0]?.headerName || 'Authorization',
+            });
+            break;
+        }
+        case 'edit-profile':
+            openEditor(profileId);
+            break;
+        case 'duplicate-profile':
+            duplicateProfile(profileId);
+            break;
+        case 'delete-profile':
+            await deleteProfile(profileId || uiState.editingProfileId);
+            break;
+        case 'apply-profile':
+            await applyProfile(profileId);
+            break;
+        case 'save-profile':
+            await saveCurrentEditorProfile({ applyAfterSave: false });
+            break;
+        case 'save-and-apply':
+            await saveCurrentEditorProfile({ applyAfterSave: true });
+            break;
+        case 'back-from-editor':
+            syncEditorDraftFromForm();
+            if (uiState.activeGroupKey) {
+                uiState.editorDraft = null;
+                uiState.view = 'group';
+                render();
+            } else {
+                goHome();
+            }
+            break;
+        case 'toggle-key':
+            syncEditorDraftFromForm();
+            uiState.revealKey = !uiState.revealKey;
+            render();
+            break;
+        case 'import':
+            dom.importFile.click();
+            break;
+        case 'export-plain':
+            await exportPlain();
+            break;
+        case 'export-encrypted':
+            await exportEncrypted();
+            break;
+        case 'toggle-mask-default': {
+            const settings = getSettings();
+            const checkbox = button instanceof HTMLInputElement ? button : dom.root.querySelector('[data-action="toggle-mask-default"]');
+            settings.preferences.maskKeysByDefault = checkbox instanceof HTMLInputElement ? checkbox.checked : settings.preferences.maskKeysByDefault;
+            persist();
+            setStatus(settings.preferences.maskKeysByDefault ? '已设为默认隐藏密钥' : '已设为默认显示密钥');
+            break;
+        }
+        default:
+            break;
     }
 }
 
-function wireEvents() {
-    dom.select.addEventListener('change', () => selectProfile(dom.select.value));
-    dom.mode.addEventListener('change', () => populateProviderOptions(dom.mode.value));
-    dom.newButton.addEventListener('click', () => {
-        const profile = defaultProfile();
-        draftProfileId = profile.id;
-        fillForm(profile);
-        setStatus('New draft created. Save to keep it.');
-    });
-    dom.duplicateButton.addEventListener('click', duplicateProfile);
-    dom.deleteButton.addEventListener('click', deleteProfile);
-    dom.saveButton.addEventListener('click', saveProfile);
-    dom.resetButton.addEventListener('click', resetDraft);
-    dom.applyButton.addEventListener('click', applyCurrentProfile);
-    dom.exportButton.addEventListener('click', exportPlain);
-    dom.exportEncryptedButton.addEventListener('click', exportEncrypted);
-    dom.importButton.addEventListener('click', () => dom.importFile.click());
-    dom.importFile.addEventListener('change', async event => {
-        const file = event.target.files?.[0];
-        if (!file) {
-            return;
-        }
-        try {
-            await importPayloadFromFile(file);
-        } catch (error) {
-            console.error(`${MODULE_NAME}: import failed`, error);
-            setStatus(error instanceof Error ? error.message : 'Import failed.', 'error');
-        } finally {
-            dom.importFile.value = '';
-        }
-    });
-    dom.toggleKey.addEventListener('click', () => {
-        revealKey = !revealKey;
-        updateSecretVisibility();
-    });
-    dom.maskDefault.addEventListener('input', () => {
-        getSettings().preferences.maskKeysByDefault = !!dom.maskDefault.checked;
-        if (dom.maskDefault.checked) {
-            revealKey = false;
-        }
-        updateSecretVisibility();
-        persist();
-    });
-}
+function handleChange(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+        return;
+    }
 
-function bindDom() {
-    dom.select = document.getElementById('api_profile_manager_profile_select');
-    dom.mode = document.getElementById('api_profile_manager_mode');
-    dom.provider = document.getElementById('api_profile_manager_provider');
-    dom.name = document.getElementById('api_profile_manager_name');
-    dom.baseUrl = document.getElementById('api_profile_manager_base_url');
-    dom.apiKey = document.getElementById('api_profile_manager_api_key');
-    dom.headerName = document.getElementById('api_profile_manager_header_name');
-    dom.headerValue = document.getElementById('api_profile_manager_header_value');
-    dom.notes = document.getElementById('api_profile_manager_notes');
-    dom.status = document.getElementById('api_profile_manager_status');
-    dom.validation = document.getElementById('api_profile_manager_validation');
-    dom.newButton = document.getElementById('api_profile_manager_new');
-    dom.duplicateButton = document.getElementById('api_profile_manager_duplicate');
-    dom.deleteButton = document.getElementById('api_profile_manager_delete');
-    dom.applyButton = document.getElementById('api_profile_manager_apply');
-    dom.saveButton = document.getElementById('api_profile_manager_save');
-    dom.resetButton = document.getElementById('api_profile_manager_reset');
-    dom.exportButton = document.getElementById('api_profile_manager_export');
-    dom.exportEncryptedButton = document.getElementById('api_profile_manager_export_encrypted');
-    dom.importButton = document.getElementById('api_profile_manager_import');
-    dom.importFile = document.getElementById('api_profile_manager_import_file');
-    dom.toggleKey = document.getElementById('api_profile_manager_toggle_key');
-    dom.maskDefault = document.getElementById('api_profile_manager_mask_default');
-}
+    if (uiState.view === 'editor') {
+        uiState.editorDraft = readEditorProfile();
+    }
 
-function initializeRevealPreference() {
-    revealKey = !getSettings().preferences.maskKeysByDefault;
-    updateSecretVisibility();
+    if (target.name === 'mode') {
+        const providerSelect = dom.root.querySelector('select[name="provider"]');
+        if (providerSelect instanceof HTMLSelectElement) {
+            const options = getProviderOptions(target.value);
+            providerSelect.innerHTML = options.map(option => `<option value="${option.value}">${escapeHtml(option.label)}</option>`).join('');
+            if (uiState.editorDraft) {
+                uiState.editorDraft.provider = options[0]?.value || uiState.editorDraft.provider;
+            }
+        }
+    }
 }
 
 jQuery(async () => {
-    const settings = getSettings();
     const target = document.getElementById('rm_api_block') || document.getElementById('extensions_settings2');
     if (!target) {
         console.warn(`${MODULE_NAME}: settings container not found`);
@@ -635,10 +1047,39 @@ jQuery(async () => {
 
     const html = await renderExtensionTemplateAsync(MODULE_NAME, 'settings', {});
     target.insertAdjacentHTML('beforeend', html);
-    bindDom();
-    dom.maskDefault.checked = !!settings.preferences.maskKeysByDefault;
-    initializeRevealPreference();
-    wireEvents();
-    selectProfile(settings.activeProfileId);
-    setStatus('Ready');
+
+    dom.root = document.getElementById('api_profile_manager_root');
+    dom.importFile = document.getElementById('api_profile_manager_import_file');
+
+    if (!(dom.root instanceof HTMLElement) || !(dom.importFile instanceof HTMLInputElement)) {
+        console.warn(`${MODULE_NAME}: mount root not found`);
+        return;
+    }
+
+    dom.root.addEventListener('click', event => {
+        handleClick(event).catch(error => {
+            console.error(`${MODULE_NAME}: click action failed`, error);
+            setStatus(error instanceof Error ? error.message : '操作失败', 'error');
+        });
+    });
+    dom.root.addEventListener('change', handleChange);
+    dom.importFile.addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            return;
+        }
+
+        try {
+            await importPayloadFromFile(file);
+        } catch (error) {
+            console.error(`${MODULE_NAME}: import failed`, error);
+            setStatus(error instanceof Error ? error.message : '导入失败', 'error');
+        } finally {
+            dom.importFile.value = '';
+            render();
+        }
+    });
+
+    getSettings();
+    render();
 });
