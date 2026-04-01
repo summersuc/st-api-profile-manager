@@ -878,7 +878,7 @@ function renderContent() {
 function renderSheet() {
     return `
         <div class="api-profile-manager__overlay" data-action="close-overlay">
-            <section class="api-profile-manager__sheet" aria-label="API管家面板" onclick="event.stopPropagation()">
+            <section class="api-profile-manager__sheet" aria-label="API管家面板">
                 <div class="api-profile-manager__grabber"></div>
                 <header class="api-profile-manager__hero">
                     <div>
@@ -920,7 +920,16 @@ function render() {
 }
 
 async function handleClick(event) {
-    const button = event.target.closest('[data-action]');
+    const target = event.target;
+    if (!(target instanceof Element)) {
+        return;
+    }
+
+    if (target.closest('.api-profile-manager__sheet') && !target.closest('[data-action]')) {
+        return;
+    }
+
+    const button = target.closest('[data-action]');
     if (!(button instanceof HTMLElement)) {
         return;
     }
