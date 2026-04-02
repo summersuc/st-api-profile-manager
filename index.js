@@ -1042,7 +1042,12 @@ async function handleClick(event) {
         return;
     }
 
+    if (target.closest('.api-profile-manager__launcher-bar') || target.closest('.api-profile-manager__sheet')) {
+        event.stopPropagation();
+    }
+
     if (target.classList.contains('api-profile-manager__overlay')) {
+        event.stopPropagation();
         setOpen(false);
         return;
     }
@@ -1152,6 +1157,8 @@ function handleChange(event) {
         return;
     }
 
+    event.stopPropagation();
+
     if (uiState.view === 'editor') {
         uiState.editorDraft = readEditorProfile();
     }
@@ -1173,6 +1180,8 @@ function handleInput(event) {
     if (!(target instanceof HTMLSelectElement || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
         return;
     }
+
+    event.stopPropagation();
 
     if (uiState.view === 'editor') {
         uiState.editorDraft = readEditorProfile();
