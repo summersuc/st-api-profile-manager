@@ -214,11 +214,6 @@ function getCurrentGroup() {
 }
 
 function getEditorForm() {
-    const panelForm = dom.panelHost?.querySelector?.('[data-role="editor-form"]');
-    if (panelForm instanceof HTMLFormElement) {
-        return panelForm;
-    }
-
     const rootForm = dom.root?.querySelector?.('[data-role="editor-form"]');
     return rootForm instanceof HTMLFormElement ? rootForm : null;
 }
@@ -231,18 +226,6 @@ function setStatus(message, type = 'success') {
 
 function getMountTarget() {
     return document.getElementById('rm_api_block') || document.getElementById('extensions_settings2');
-}
-
-function ensurePanelHost() {
-    let host = document.getElementById('api_profile_manager_panel_host');
-    if (!(host instanceof HTMLElement)) {
-        host = document.createElement('div');
-        host.id = 'api_profile_manager_panel_host';
-        host.className = 'api-profile-manager api-profile-manager__panel-host';
-        document.body.append(host);
-    }
-    dom.panelHost = host;
-    return host;
 }
 
 function setOpen(value) {
@@ -1057,18 +1040,15 @@ function bindImportInput(input) {
 
 function render() {
     const root = ensureInlineRoot();
-    const panelHost = ensurePanelHost();
 
-    if (!(root instanceof HTMLElement) || !(panelHost instanceof HTMLElement)) {
+    if (!(root instanceof HTMLElement)) {
         return;
     }
 
-    root.innerHTML = renderLauncher();
-    panelHost.innerHTML = uiState.isOpen ? renderSheet() : '';
-    panelHost.classList.toggle('is-open', uiState.isOpen);
+    root.innerHTML = `${renderLauncher()}${uiState.isOpen ? renderSheet() : ''}`;
+    root.classList.toggle('is-open', uiState.isOpen);
 
     bindSurfaceEvents(root);
-    bindSurfaceEvents(panelHost);
 }
 
 async function handleClick(event) {
@@ -1243,7 +1223,6 @@ jQuery(async () => {
 
     dom.root = document.getElementById('api_profile_manager_root');
     dom.importFile = document.getElementById('api_profile_manager_import_file');
-    dom.panelHost = ensurePanelHost();
 
     if (!(dom.root instanceof HTMLElement) || !(dom.importFile instanceof HTMLInputElement)) {
         console.warn(`${MODULE_NAME}: mount root not found`);
@@ -1251,7 +1230,6 @@ jQuery(async () => {
     }
 
     bindSurfaceEvents(dom.root);
-    bindSurfaceEvents(dom.panelHost);
     bindImportInput(dom.importFile);
 
     getSettings();

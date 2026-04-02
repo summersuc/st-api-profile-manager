@@ -42,15 +42,8 @@
     margin-bottom: var(--apm-space-3);
 }
 
-.api-profile-manager__panel-host {
-    position: fixed;
-    inset: 0;
+.api-profile-manager__root.is-open {
     z-index: 40000;
-    pointer-events: none;
-}
-
-.api-profile-manager__panel-host.is-open {
-    pointer-events: auto;
 }
 
 .api-profile-manager__fab,
@@ -120,21 +113,24 @@
 }
 
 .api-profile-manager__overlay {
-    position: fixed;
-    inset: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    padding: var(--apm-space-5);
+    padding: var(--apm-space-4) 0;
     background: rgba(4, 8, 16, 0.54);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     pointer-events: auto;
+    border-radius: var(--apm-radius-md);
 }
 
 .api-profile-manager__sheet {
     width: min(100%, 980px);
-    max-height: min(90vh, 960px);
+    max-height: min(88vh, 960px);
     display: flex;
     flex-direction: column;
     border: 1px solid var(--apm-border);
@@ -611,8 +607,8 @@
 
 @media (min-width: 721px) and (max-width: 1024px) {
     .api-profile-manager__overlay {
-        align-items: flex-end;
-        padding: var(--apm-space-4);
+        align-items: flex-start;
+        padding: var(--apm-space-4) 0;
     }
 
     .api-profile-manager__sheet {
@@ -631,8 +627,11 @@
 
 @media (max-width: 720px) {
     .api-profile-manager__overlay {
+        position: fixed;
+        inset: 0;
         padding: 0;
         align-items: flex-end;
+        border-radius: 0;
     }
 
     .api-profile-manager__sheet {
