@@ -453,6 +453,10 @@
     gap: var(--apm-space-3);
 }
 
+.api-profile-manager__group-card.is-expanded {
+    border-color: color-mix(in srgb, var(--apm-accent) 45%, var(--apm-border));
+}
+
 .api-profile-manager__group-top,
 .api-profile-manager__profile-top,
 .api-profile-manager__toolbar {
@@ -460,6 +464,10 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--apm-space-3);
+}
+
+.api-profile-manager__group-top {
+    cursor: pointer;
 }
 
 .api-profile-manager__group-name,
@@ -510,6 +518,36 @@
     display: flex;
     gap: var(--apm-space-2);
     flex-wrap: wrap;
+}
+
+.api-profile-manager__drawer-list {
+    display: grid;
+    gap: var(--apm-space-2);
+}
+
+.api-profile-manager__drawer-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--apm-space-3);
+    padding: var(--apm-space-3);
+    border: 1px solid color-mix(in srgb, var(--apm-border) 90%, transparent);
+    border-radius: var(--apm-radius-sm);
+    background: color-mix(in srgb, var(--apm-surface-soft) 100%, transparent);
+}
+
+.api-profile-manager__drawer-title {
+    margin: 0;
+    color: var(--apm-text);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.api-profile-manager__drawer-actions {
+    display: flex;
+    gap: var(--apm-space-2);
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .api-profile-manager__profile-action {
@@ -746,6 +784,15 @@
 
     .api-profile-manager__profile-action {
         flex-basis: calc(50% - var(--apm-space-2));
+    }
+
+    .api-profile-manager__drawer-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .api-profile-manager__drawer-actions {
+        justify-content: stretch;
     }
 
     .api-profile-manager__launcher-bar {

@@ -50,12 +50,14 @@ const CHAT_PROVIDER_CONFIG = {
         sourceSelector: '#chat_completion_source',
         sourceValue: 'custom',
         urlSelector: '#custom_api_url_text',
+        modelSelector: '#model_custom_select',
         connectButton: '#api_button_openai',
     },
     openai: {
         secretKey: 'api_key_openai',
         sourceSelector: '#chat_completion_source',
         sourceValue: 'openai',
+        modelSelector: '#model_openai_select',
         connectButton: '#api_button_openai',
     },
     azure_openai: {
@@ -63,20 +65,21 @@ const CHAT_PROVIDER_CONFIG = {
         sourceSelector: '#chat_completion_source',
         sourceValue: 'azure_openai',
         urlSelector: '#azure_base_url',
+        modelSelector: '#model_azure_openai_select',
         connectButton: '#api_button_openai',
     },
 };
 
 const TEXT_PROVIDER_CONFIG = {
-    generic: { secretKey: 'api_key_generic', typeSelector: '#textgen_type', typeValue: 'generic', urlSelector: '#generic_api_url_text', connectButton: '#api_button_textgenerationwebui' },
+    generic: { secretKey: 'api_key_generic', typeSelector: '#textgen_type', typeValue: 'generic', urlSelector: '#generic_api_url_text', modelSelector: '#generic_model', connectButton: '#api_button_textgenerationwebui' },
     ooba: { secretKey: 'api_key_ooba', typeSelector: '#textgen_type', typeValue: 'ooba', urlSelector: '#textgenerationwebui_api_url_text', connectButton: '#api_button_textgenerationwebui' },
-    vllm: { secretKey: 'api_key_vllm', typeSelector: '#textgen_type', typeValue: 'vllm', urlSelector: '#vllm_api_url_text', connectButton: '#api_button_textgenerationwebui' },
-    aphrodite: { secretKey: 'api_key_aphrodite', typeSelector: '#textgen_type', typeValue: 'aphrodite', urlSelector: '#aphrodite_api_url_text', connectButton: '#api_button_textgenerationwebui' },
-    tabby: { secretKey: 'api_key_tabby', typeSelector: '#textgen_type', typeValue: 'tabby', urlSelector: '#tabby_api_url_text', connectButton: '#api_button_textgenerationwebui' },
-    koboldcpp: { secretKey: 'api_key_koboldcpp', typeSelector: '#textgen_type', typeValue: 'koboldcpp', urlSelector: '#koboldcpp_api_url_text', connectButton: '#api_button_textgenerationwebui' },
-    llamacpp: { secretKey: 'api_key_llamacpp', typeSelector: '#textgen_type', typeValue: 'llamacpp', urlSelector: '#llamacpp_api_url_text', connectButton: '#api_button_textgenerationwebui' },
-    ollama: { typeSelector: '#textgen_type', typeValue: 'ollama', urlSelector: '#ollama_api_url_text', connectButton: '#api_button_textgenerationwebui' },
-    huggingface: { secretKey: 'api_key_huggingface', typeSelector: '#textgen_type', typeValue: 'huggingface', urlSelector: '#huggingface_api_url_text', connectButton: '#api_button_textgenerationwebui' },
+    vllm: { secretKey: 'api_key_vllm', typeSelector: '#textgen_type', typeValue: 'vllm', urlSelector: '#vllm_api_url_text', modelSelector: '#vllm_model', connectButton: '#api_button_textgenerationwebui' },
+    aphrodite: { secretKey: 'api_key_aphrodite', typeSelector: '#textgen_type', typeValue: 'aphrodite', urlSelector: '#aphrodite_api_url_text', modelSelector: '#aphrodite_model', connectButton: '#api_button_textgenerationwebui' },
+    tabby: { secretKey: 'api_key_tabby', typeSelector: '#textgen_type', typeValue: 'tabby', urlSelector: '#tabby_api_url_text', modelSelector: '#tabby_model', connectButton: '#api_button_textgenerationwebui' },
+    koboldcpp: { secretKey: 'api_key_koboldcpp', typeSelector: '#textgen_type', typeValue: 'koboldcpp', connectButton: '#api_button_textgenerationwebui' },
+    llamacpp: { secretKey: 'api_key_llamacpp', typeSelector: '#textgen_type', typeValue: 'llamacpp', urlSelector: '#llamacpp_api_url_text', modelSelector: '#llamacpp_model', connectButton: '#api_button_textgenerationwebui' },
+    ollama: { typeSelector: '#textgen_type', typeValue: 'ollama', urlSelector: '#ollama_api_url_text', modelSelector: '#ollama_model', connectButton: '#api_button_textgenerationwebui' },
+    huggingface: { secretKey: 'api_key_huggingface', typeSelector: '#textgen_type', typeValue: 'huggingface', connectButton: '#api_button_textgenerationwebui' },
 };
 
 const dom = {};
@@ -427,6 +430,28 @@ function clickElement(selector) {
     return true;
 }
 
+function applyModelToControl(selector, model) {
+    if (!selector || !normalizeText(model)) {
+        return false;
+    }
+
+    const element = document.querySelector(selector);
+    if (element instanceof HTMLSelectElement) {
+        element.value = model;
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    if (element instanceof HTMLInputElement) {
+        element.value = model;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    return false;
+}
+
 function validateProfile(profile) {
     if (!profile.mode || !PROVIDER_OPTIONS[profile.mode]) {
         return '请选择连接方式';
@@ -643,6 +668,7 @@ async function applyProfile(profileId) {
             : false;
     const urlApplied = config.urlSelector ? setInputValue([config.urlSelector], profile.baseUrl) : false;
     const visibleKeyApplied = config.secretKey ? setInputValue([`#${config.secretKey}`], profile.apiKey) : false;
+    const modelApplied = config.modelSelector ? applyModelToControl(config.modelSelector, profile.model) : false;
     let secretApplied = false;
 
     if (config.secretKey) {
@@ -656,11 +682,21 @@ async function applyProfile(profileId) {
 
     const connectTriggered = config.connectButton ? clickElement(config.connectButton) : false;
 
-    if (mainApiApplied || sourceApplied || urlApplied || visibleKeyApplied || secretApplied || connectTriggered) {
-        setStatus(`已启用「${profile.name}」`);
+    const requiredApplied = mainApiApplied && sourceApplied && (urlApplied || !config.urlSelector) && (modelApplied || !config.modelSelector);
+
+    if (requiredApplied) {
+        const parts = [
+            mainApiApplied ? '连接方式' : null,
+            sourceApplied ? '来源' : null,
+            urlApplied ? '地址' : null,
+            secretApplied || visibleKeyApplied ? '密钥' : null,
+            modelApplied ? '模型' : null,
+        ].filter(Boolean);
+        const detail = parts.length ? `（已写入：${parts.join('、')}）` : '';
+        setStatus(`已启用「${profile.name}」${detail}`);
         render();
     } else {
-        setStatus('已设为当前配置，但没有找到可自动填写的 SillyTavern 字段', 'error');
+        setStatus('应用未完成：当前 SillyTavern 页面没有成功写入关键字段（连接方式 / 来源 / 地址 / 模型）', 'error');
     }
 }
 
@@ -839,24 +875,41 @@ function renderHomeView() {
                 ${groups.map(group => {
                     const current = group.profiles.find(profile => profile.id === activeProfile?.id);
                     const latest = group.profiles[0];
+                    const isExpanded = uiState.activeGroupKey === group.key;
                     return `
-                        <article class="api-profile-manager__group-card">
-                            <div class="api-profile-manager__group-top">
+                        <article class="api-profile-manager__group-card ${isExpanded ? 'is-expanded' : ''}">
+                            <div class="api-profile-manager__group-top" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
                                 <div>
                                     <span class="api-profile-manager__group-label">接口分组</span>
                                     <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
                                     <p class="api-profile-manager__meta">${escapeHtml(group.baseUrl || '未设置接口地址')}</p>
                                 </div>
-                                <span class="api-profile-manager__pill">${group.profiles.length} 个模型</span>
+                                <span class="api-profile-manager__pill">${group.profiles.length} 个模型 ${isExpanded ? '▾' : '▸'}</span>
                             </div>
                             <div class="api-profile-manager__group-badges">
                                 <span class="api-profile-manager__pill">最新模型：${escapeHtml(latest?.model || latest?.name || '未命名')}</span>
                                 <span class="api-profile-manager__pill">当前模型：${escapeHtml(current?.model || current?.name || '无')}</span>
                             </div>
                             <div class="api-profile-manager__inline-actions">
-                                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="open-group" data-group-key="${escapeHtml(group.key)}">进入分组</button>
                                 <button class="api-profile-manager__button" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
                             </div>
+                            ${isExpanded ? `
+                                <div class="api-profile-manager__drawer-list">
+                                    ${group.profiles.map(profile => `
+                                        <article class="api-profile-manager__drawer-item">
+                                            <div>
+                                                <h4 class="api-profile-manager__drawer-title">${escapeHtml(profile.name || profile.model || '未命名模型')}</h4>
+                                                <p class="api-profile-manager__meta">${escapeHtml(profile.model || '未填写模型')} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))}</p>
+                                            </div>
+                                            <div class="api-profile-manager__drawer-actions">
+                                                <button class="api-profile-manager__profile-action api-profile-manager__profile-action--primary" data-action="apply-profile" data-profile-id="${profile.id}">应用</button>
+                                                <button class="api-profile-manager__profile-action" data-action="edit-profile" data-profile-id="${profile.id}">编辑</button>
+                                                <button class="api-profile-manager__profile-action api-profile-manager__profile-action--danger" data-action="delete-profile" data-profile-id="${profile.id}">删除</button>
+                                            </div>
+                                        </article>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
                         </article>
                     `;
                 }).join('')}
@@ -1051,12 +1104,12 @@ function renderSheet() {
 
 function renderLauncher() {
     return `
-        <div class="api-profile-manager__launcher-bar" aria-label="API管家入口">
+        <div class="api-profile-manager__launcher-bar" data-action="open-panel" aria-label="API管家入口" role="button" tabindex="0">
             <span class="api-profile-manager__launcher-title">API管家</span>
-            <button class="api-profile-manager__launcher-button" data-action="open-panel" type="button" aria-label="打开 API管家">
+            <span class="api-profile-manager__launcher-button" aria-hidden="true">
                 <span class="api-profile-manager__fab-icon">API</span>
                 <span>打开</span>
-            </button>
+            </span>
         </div>
     `;
 }
@@ -1279,6 +1332,10 @@ async function handleClick(event) {
             break;
         case 'open-group':
             openGroup(groupKey);
+            break;
+        case 'toggle-group':
+            uiState.activeGroupKey = uiState.activeGroupKey === groupKey ? '' : groupKey;
+            render();
             break;
         case 'new-profile':
             openEditor('', {});
