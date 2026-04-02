@@ -236,7 +236,7 @@ function ensurePanelHost() {
     if (!(host instanceof HTMLElement)) {
         host = document.createElement('div');
         host.id = 'api_profile_manager_panel_host';
-        host.className = 'api-profile-manager__panel-host';
+        host.className = 'api-profile-manager api-profile-manager__panel-host';
         document.body.append(host);
     }
     dom.panelHost = host;
@@ -933,17 +933,13 @@ function renderSheet() {
 
 function renderLauncher() {
     return `
-        <section class="api-profile-manager__launcher-card" aria-label="API管家入口">
-            <div class="api-profile-manager__launcher-copy">
-                <span class="api-profile-manager__group-label">API 页面入口</span>
-                <h3 class="api-profile-manager__group-name">API管家</h3>
-                <p class="api-profile-manager__meta">管理多个 API 配置、分组保存不同模型，并快速切换当前方案。</p>
-            </div>
-            <button class="api-profile-manager__fab api-profile-manager__fab--inline" data-action="open-panel" type="button" aria-label="打开 API管家">
+        <div class="api-profile-manager__launcher-bar" aria-label="API管家入口">
+            <span class="api-profile-manager__launcher-title">API管家</span>
+            <button class="api-profile-manager__launcher-button" data-action="open-panel" type="button" aria-label="打开 API管家">
                 <span class="api-profile-manager__fab-icon">API</span>
-                <span>打开 API管家</span>
+                <span>打开</span>
             </button>
-        </section>
+        </div>
     `;
 }
 

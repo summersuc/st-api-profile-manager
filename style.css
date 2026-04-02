@@ -43,16 +43,19 @@
 }
 
 .api-profile-manager__panel-host {
-    position: relative;
-    z-index: 214;
+    position: fixed;
+    inset: 0;
+    z-index: 40000;
+    pointer-events: none;
 }
 
-.api-profile-manager__fab {
+.api-profile-manager__fab,
+.api-profile-manager__launcher-button {
     display: inline-flex;
     align-items: center;
     gap: var(--apm-space-2);
-    padding: 0 var(--apm-space-4);
-    height: 48px;
+    padding: 0 var(--apm-space-3);
+    height: 40px;
     border: 1px solid var(--apm-border);
     border-radius: var(--apm-radius-pill);
     background:
@@ -61,23 +64,18 @@
         var(--apm-surface-strong);
     box-shadow: var(--apm-shadow-card);
     color: var(--apm-text);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     transition: transform var(--apm-transition), box-shadow var(--apm-transition), border-color var(--apm-transition);
 }
 
-.api-profile-manager__fab--inline {
-    position: sticky;
-    bottom: max(var(--apm-space-3), env(safe-area-inset-bottom, 0px));
-    justify-content: center;
-    width: 100%;
-}
-
 .api-profile-manager__fab:hover,
-.api-profile-manager__fab:focus-visible {
+.api-profile-manager__fab:focus-visible,
+.api-profile-manager__launcher-button:hover,
+.api-profile-manager__launcher-button:focus-visible {
     transform: translateY(-1px) scale(1.01);
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
     border-color: color-mix(in srgb, var(--apm-accent) 62%, var(--apm-border));
@@ -94,25 +92,27 @@
     font-size: 15px;
 }
 
-.api-profile-manager__launcher-card {
+.api-profile-manager__launcher-bar {
     position: relative;
     z-index: 25;
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
     gap: var(--apm-space-3);
-    padding: var(--apm-space-4);
+    padding: 10px 12px;
     border: 1px solid var(--apm-border);
-    border-radius: var(--apm-radius-md);
+    border-radius: var(--apm-radius-sm);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 32%),
         var(--apm-surface);
     box-shadow: var(--apm-shadow-card);
 }
 
-.api-profile-manager__launcher-copy {
-    display: flex;
-    flex-direction: column;
-    gap: var(--apm-space-2);
+.api-profile-manager__launcher-title {
+    color: var(--apm-text);
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.2;
 }
 
 .api-profile-manager__overlay {
@@ -125,10 +125,11 @@
     background: rgba(4, 8, 16, 0.54);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    pointer-events: auto;
 }
 
 .api-profile-manager__sheet {
-    width: min(100%, 1120px);
+    width: min(100%, 980px);
     max-height: min(90vh, 960px);
     display: flex;
     flex-direction: column;
@@ -611,7 +612,7 @@
     }
 
     .api-profile-manager__sheet {
-        width: min(100%, 880px);
+        width: min(100%, 760px);
         max-height: min(88vh, 900px);
         border-radius: var(--apm-radius-lg) var(--apm-radius-lg) 0 0;
     }
@@ -672,8 +673,7 @@
         flex-basis: calc(50% - var(--apm-space-2));
     }
 
-    .api-profile-manager__launcher-card {
-        position: relative;
-        padding: var(--apm-space-3);
+    .api-profile-manager__launcher-bar {
+        padding: 10px 12px;
     }
 }
