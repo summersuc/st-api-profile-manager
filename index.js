@@ -1077,6 +1077,14 @@ async function handleClick(event) {
         return;
     }
 
+    if (Date.now() - lastLauncherTouchAt < 800) {
+        if (target.classList.contains('api-profile-manager__overlay') || !target.closest('[data-action="open-panel"]')) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+    }
+
     if (target.closest('.api-profile-manager__launcher-bar') || target.closest('.api-profile-manager__sheet')) {
         event.stopPropagation();
     }
