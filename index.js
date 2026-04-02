@@ -436,14 +436,9 @@ function validateProfile(profile) {
         return '请选择聊天补全来源';
     }
 
-    if (!normalizeText(profile.model)) {
+    const selectedModels = Array.from(new Set([normalizeText(profile.model), ...(profile.selectedModels ?? []).map(normalizeText)].filter(Boolean)));
+    if (!selectedModels.length) {
         return '请填写至少一个模型名称';
-    }
-
-    const normalizedName = normalizeText(profile.name || profile.model);
-    const duplicate = getProfiles().find(item => item.id !== profile.id && normalizeText(item.name).toLocaleLowerCase() === normalizedName.toLocaleLowerCase());
-    if (duplicate) {
-        return '同名模型配置已存在';
     }
 
     if (!normalizeText(profile.baseUrl)) {
@@ -522,6 +517,15 @@ async function saveCurrentEditorProfile({ applyAfterSave = false } = {}) {
     const selectedModels = Array.from(new Set([profile.model, ...(profile.selectedModels ?? [])].map(normalizeText).filter(Boolean)));
     const modelsToSave = selectedModels.length ? selectedModels : [normalizeText(profile.model)];
     let primaryProfile = null;
+    const settings = getSettings();
+
+    settings.profiles = settings.profiles.filter(item => {
+        const sameOrigin = normalizeText(item.baseUrl) === normalizeText(profile.baseUrl)
+            && normalizeText(item.provider) === normalizeText(profile.provider)
+            && normalizeText(item.mode) === normalizeText(profile.mode)
+            && String(item.apiKey ?? '') === String(profile.apiKey ?? '');
+        return !(sameOrigin && modelsToSave.includes(normalizeText(item.model)) && item.id !== profile.id);
+    });
 
     for (const modelName of modelsToSave) {
         const nextProfile = {
@@ -828,7 +832,6 @@ function renderHomeView() {
             <div class="api-profile-manager__section-head">
                 <div>
                     <h3 class="api-profile-manager__section-title">接口分组</h3>
-                    <p class="api-profile-manager__section-subtitle">同一个接口地址和密钥下的多个模型会自动归在一起，方便快速切换。</p>
                 </div>
                 <button class="api-profile-manager__button" data-action="open-tools">工具</button>
             </div>
@@ -923,7 +926,6 @@ function renderEditorView() {
             <div class="api-profile-manager__section-head">
                 <div>
                     <h3 class="api-profile-manager__section-title">${profile.model ? '编辑模型配置' : '新建模型配置'}</h3>
-                    <p class="api-profile-manager__section-subtitle">这里只保留高频字段。后面会继续接入模型拉取和多选保存。</p>
                 </div>
                 <button class="api-profile-manager__button" data-action="back-from-editor">返回</button>
             </div>
@@ -953,7 +955,7 @@ function renderEditorView() {
                         <input class="api-profile-manager__input" name="model" value="${escapeHtml(profile.model)}" placeholder="例如：claude-3-7-sonnet">
                     </label>
                     <div class="api-profile-manager__field api-profile-manager__field--full">
-                        <span class="api-profile-manager__label">模型拉取与多选（即将接入）</span>
+                        <span class="api-profile-manager__label">模型拉取与多选</span>
                         <div class="api-profile-manager__secondary-grid">
                             <button class="api-profile-manager__button" type="button" data-action="fetch-models-placeholder">拉取模型</button>
                             <select class="api-profile-manager__select api-profile-manager__select--multiple" name="selectedModels" multiple>
@@ -962,7 +964,7 @@ function renderEditorView() {
                                     : '<option disabled>这里会显示可多选模型</option>'}
                             </select>
                         </div>
-                        <span class="api-profile-manager__field-note">现在可以先手动多选已有模型名。下一步会接入真实模型拉取。</span>
+                        <span class="api-profile-manager__field-note">如果你已经多选了模型，保存时会直接生成同组下的多个模型配置。</span>
                     </label>
                 </div>
             </form>

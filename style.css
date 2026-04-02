@@ -47,8 +47,8 @@
 }
 
 .api-profile-manager__popup-content {
-    width: min(100%, 1040px);
-    max-width: 1040px;
+    width: min(100%, 1220px);
+    max-width: 1220px;
     margin: 0 auto;
 }
 
@@ -153,7 +153,7 @@
 
 .api-profile-manager__sheet--popup {
     width: 100%;
-    max-height: min(80vh, 900px);
+    max-height: min(84vh, 980px);
 }
 
 .api-profile-manager__grabber {
@@ -182,8 +182,8 @@
 }
 
 .popup.transparent_dialogue_popup:has(.api-profile-manager__popup-content) {
-    width: min(1040px, calc(100dvw - 48px));
-    max-width: calc(100dvw - 48px);
+    width: min(1220px, calc(100dvw - 40px));
+    max-width: calc(100dvw - 40px);
     padding: 0;
     border: none;
     background: transparent;
@@ -195,7 +195,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--apm-space-3);
-    padding-top: var(--apm-space-2);
+    padding-top: var(--apm-space-3);
     padding-bottom: var(--apm-space-4);
 }
 
@@ -227,8 +227,8 @@
 }
 
 .api-profile-manager__subtitle {
-    margin: var(--apm-space-2) 0 0;
-    font-size: 13px;
+    margin: var(--apm-space-1) 0 0;
+    font-size: 12px;
 }
 
 .api-profile-manager__status {
@@ -335,7 +335,7 @@
     flex: 1 1 auto;
     overflow-y: auto;
     padding-top: var(--apm-space-2);
-    padding-bottom: var(--apm-space-5);
+    padding-bottom: var(--apm-space-3);
 }
 
 .api-profile-manager__home,
@@ -652,6 +652,18 @@
     font-size: 13px;
 }
 
+.api-profile-manager__group-list,
+.api-profile-manager__profile-list {
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 1025px) {
+    .api-profile-manager__group-list,
+    .api-profile-manager__profile-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 @media (min-width: 721px) and (max-width: 1024px) {
     .api-profile-manager__overlay {
         align-items: flex-start;
@@ -674,13 +686,17 @@
 
 @media (max-width: 720px) {
     .api-profile-manager__popup-content {
-        width: calc(100vw - 12px);
+        width: 100dvw;
         max-width: none;
     }
 
     .popup.transparent_dialogue_popup:has(.api-profile-manager__popup-content) {
-        width: calc(100dvw - 12px);
-        max-width: calc(100dvw - 12px);
+        width: 100dvw;
+        max-width: 100dvw;
+        height: 100dvh;
+        max-height: 100dvh;
+        margin: 0;
+        border-radius: 0;
     }
 
     .api-profile-manager__overlay {
@@ -693,12 +709,10 @@
 
     .api-profile-manager__sheet {
         width: 100%;
-        max-height: 88vh;
-        min-height: min(72vh, 720px);
-        border-left: 0;
-        border-right: 0;
-        border-bottom: 0;
-        border-radius: var(--apm-radius-lg) var(--apm-radius-lg) 0 0;
+        max-height: 100dvh;
+        min-height: 100dvh;
+        border: 0;
+        border-radius: 0;
     }
 
     .api-profile-manager__hero,
