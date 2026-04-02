@@ -47,8 +47,9 @@
 }
 
 .api-profile-manager__popup-content {
-    width: min(100vw - 32px, 980px);
-    max-width: 980px;
+    width: min(100%, 1040px);
+    max-width: 1040px;
+    margin: 0 auto;
 }
 
 .api-profile-manager__fab,
@@ -152,7 +153,7 @@
 
 .api-profile-manager__sheet--popup {
     width: 100%;
-    max-height: min(85vh, 960px);
+    max-height: min(80vh, 900px);
 }
 
 .api-profile-manager__grabber {
@@ -168,6 +169,25 @@
 .api-profile-manager__footer {
     padding-left: var(--apm-space-5);
     padding-right: var(--apm-space-5);
+}
+
+.popup .popup-content:has(.api-profile-manager__popup-content) {
+    padding: 0;
+    margin-top: 0;
+    overflow: visible;
+}
+
+.popup .popup-body:has(.api-profile-manager__popup-content) {
+    overflow: visible;
+}
+
+.popup.transparent_dialogue_popup:has(.api-profile-manager__popup-content) {
+    width: min(1040px, calc(100dvw - 48px));
+    max-width: calc(100dvw - 48px);
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
 }
 
 .api-profile-manager__hero {
@@ -414,6 +434,11 @@
     gap: var(--apm-space-3);
 }
 
+.api-profile-manager__group-list,
+.api-profile-manager__profile-list {
+    grid-template-columns: 1fr;
+}
+
 .api-profile-manager__group-card,
 .api-profile-manager__profile-card,
 .api-profile-manager__editor-card,
@@ -469,8 +494,7 @@
 .api-profile-manager__profile-badges,
 .api-profile-manager__inline-actions,
 .api-profile-manager__footer,
-.api-profile-manager__tool-actions,
-.api-profile-manager__secondary-grid {
+.api-profile-manager__tool-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--apm-space-2);
@@ -516,6 +540,13 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.api-profile-manager__secondary-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 180px) 1fr;
+    gap: var(--apm-space-2);
+    align-items: center;
+}
+
 .api-profile-manager__field {
     display: flex;
     flex-direction: column;
@@ -544,6 +575,12 @@
     color: var(--apm-text);
     font-size: 13px;
     transition: border-color var(--apm-transition), box-shadow var(--apm-transition), background var(--apm-transition);
+}
+
+.api-profile-manager__select--multiple {
+    min-height: 120px;
+    padding-top: var(--apm-space-2);
+    padding-bottom: var(--apm-space-2);
 }
 
 .api-profile-manager__textarea {
@@ -641,6 +678,11 @@
         max-width: none;
     }
 
+    .popup.transparent_dialogue_popup:has(.api-profile-manager__popup-content) {
+        width: calc(100dvw - 12px);
+        max-width: calc(100dvw - 12px);
+    }
+
     .api-profile-manager__overlay {
         position: fixed;
         inset: 0;
@@ -678,7 +720,8 @@
     }
 
     .api-profile-manager__stats,
-    .api-profile-manager__field-grid {
+    .api-profile-manager__field-grid,
+    .api-profile-manager__secondary-grid {
         grid-template-columns: 1fr;
     }
 

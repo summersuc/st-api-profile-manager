@@ -87,6 +87,7 @@ const uiState = {
     activeGroupKey: '',
     editingProfileId: '',
     editorDraft: null,
+    fetchedModels: [],
     status: '就绪',
     statusType: 'success',
     revealKey: false,
@@ -94,6 +95,23 @@ const uiState = {
 
 let lastLauncherTouchAt = 0;
 let managerPopup = null;
+
+async function fetchJson(url, payload) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `请求失败：${response.status}`);
+    }
+
+    return await response.json();
+}
 
 function clone(value) {
     return structuredClone(value);
@@ -108,6 +126,7 @@ function defaultProfile() {
         provider: 'custom',
         name: '',
         model: '',
+        selectedModels: [],
         baseUrl: '',
         apiKey: '',
         headerName: 'Authorization',
@@ -212,6 +231,93 @@ function getActiveProfile() {
 
 function getCurrentGroup() {
     return buildGroups().find(group => group.key === uiState.activeGroupKey) ?? null;
+}
+
+function getSuggestedModels(profile) {
+    const currentProfile = profile ?? getEditingProfile() ?? defaultProfile();
+    const fetchedModels = uiState.fetchedModels.map(normalizeText).filter(Boolean);
+    const existingModels = getProfiles()
+        .filter(item => normalizeText(item.baseUrl) === normalizeText(currentProfile.baseUrl)
+            && normalizeText(item.provider) === normalizeText(currentProfile.provider)
+            && normalizeText(item.mode) === normalizeText(currentProfile.mode))
+        .map(item => normalizeText(item.model))
+        .filter(Boolean);
+
+    return Array.from(new Set([...fetchedModels, ...existingModels, normalizeText(currentProfile.model)].filter(Boolean)));
+}
+
+function getFetchModelsPayload(profile) {
+    if (profile.mode === 'text-generation') {
+        return {
+            url: '/api/backends/text-completions/status',
+            payload: {
+                api_server: profile.baseUrl,
+                api_type: profile.provider,
+            },
+        };
+    }
+
+    const payload = {
+        reverse_proxy: '',
+        proxy_password: '',
+        chat_completion_source: profile.provider,
+    };
+
+    if (profile.provider === 'custom') {
+        payload.custom_url = profile.baseUrl;
+        payload.custom_include_headers = false;
+    }
+
+    if (profile.provider === 'azure_openai') {
+        payload.azure_base_url = profile.baseUrl;
+        payload.azure_deployment_name = '';
+        payload.azure_api_version = '2024-02-01';
+    }
+
+    return {
+        url: '/api/backends/chat-completions/status',
+        payload,
+    };
+}
+
+function normalizeFetchedModels(responseData) {
+    const candidates = Array.isArray(responseData?.data) ? responseData.data : [];
+    return candidates
+        .map(item => normalizeText(typeof item === 'string' ? item : item?.id || item?.name))
+        .filter(Boolean);
+}
+
+async function fetchModelsForEditor() {
+    const profile = readEditorProfile();
+    if (!normalizeText(profile.baseUrl)) {
+        uiState.editorDraft = profile;
+        setStatus('请先填写 API URL', 'error');
+        return;
+    }
+
+    const { url, payload } = getFetchModelsPayload(profile);
+    setStatus('正在拉取模型列表…');
+
+    try {
+        const responseData = await fetchJson(url, payload);
+        const models = normalizeFetchedModels(responseData);
+
+        if (!models.length) {
+            setStatus('没有获取到模型列表，请检查当前来源、密钥和接口地址', 'error');
+            return;
+        }
+
+        uiState.fetchedModels = models;
+        uiState.editorDraft = {
+            ...profile,
+            selectedModels: Array.from(new Set([...(profile.selectedModels ?? []), ...models.slice(0, 1)])),
+        };
+        setStatus(`已拉取 ${models.length} 个模型`);
+        render();
+    } catch (error) {
+        console.error(`${MODULE_NAME}: fetch models failed`, error);
+        setStatus(error instanceof Error ? `拉取失败：${error.message}` : '拉取模型失败', 'error');
+    }
 }
 
 function getEditorForm() {
@@ -327,16 +433,17 @@ function validateProfile(profile) {
     }
 
     if (!profile.provider) {
-        return '请选择接口类型';
+        return '请选择聊天补全来源';
     }
 
-    if (!normalizeText(profile.name)) {
-        return '请填写配置名称';
+    if (!normalizeText(profile.model)) {
+        return '请填写至少一个模型名称';
     }
 
-    const duplicate = getProfiles().find(item => item.id !== profile.id && normalizeText(item.name).toLocaleLowerCase() === normalizeText(profile.name).toLocaleLowerCase());
+    const normalizedName = normalizeText(profile.name || profile.model);
+    const duplicate = getProfiles().find(item => item.id !== profile.id && normalizeText(item.name).toLocaleLowerCase() === normalizedName.toLocaleLowerCase());
     if (duplicate) {
-        return '配置名称不能重复';
+        return '同名模型配置已存在';
     }
 
     if (!normalizeText(profile.baseUrl)) {
@@ -368,11 +475,14 @@ function readEditorProfile() {
     base.provider = String(formData.get('provider') || getProviderOptions(base.mode)[0]?.value || 'custom');
     base.name = normalizeText(formData.get('name'));
     base.model = normalizeText(formData.get('model'));
+    base.selectedModels = formData.getAll('selectedModels').map(value => normalizeText(value)).filter(Boolean);
     base.baseUrl = normalizeText(formData.get('baseUrl')).replace(/\/+$/u, '');
     base.apiKey = String(formData.get('apiKey') ?? '');
-    base.headerName = normalizeText(formData.get('headerName'));
-    base.headerValue = normalizeText(formData.get('headerValue'));
-    base.notes = normalizeText(formData.get('notes'));
+    base.headerName = 'Authorization';
+    base.headerValue = '';
+    base.notes = '';
+    base.name = base.model || base.name || base.baseUrl;
+    base.groupName = base.groupName || base.baseUrl;
     base.updatedAt = new Date().toISOString();
     return base;
 }
@@ -409,16 +519,35 @@ async function saveCurrentEditorProfile({ applyAfterSave = false } = {}) {
         return false;
     }
 
-    upsertProfile(profile);
-    uiState.editingProfileId = profile.id;
-    uiState.editorDraft = clone(profile);
+    const selectedModels = Array.from(new Set([profile.model, ...(profile.selectedModels ?? [])].map(normalizeText).filter(Boolean)));
+    const modelsToSave = selectedModels.length ? selectedModels : [normalizeText(profile.model)];
+    let primaryProfile = null;
+
+    for (const modelName of modelsToSave) {
+        const nextProfile = {
+            ...clone(profile),
+            id: primaryProfile ? crypto.randomUUID() : profile.id,
+            name: modelName,
+            model: modelName,
+            selectedModels: modelsToSave,
+            groupName: profile.groupName || profile.baseUrl,
+            updatedAt: new Date().toISOString(),
+        };
+        upsertProfile(nextProfile);
+        if (!primaryProfile) {
+            primaryProfile = nextProfile;
+        }
+    }
+
+    uiState.editingProfileId = primaryProfile?.id || profile.id;
+    uiState.editorDraft = clone(primaryProfile || profile);
     persist();
-    setStatus(applyAfterSave ? `已保存并准备启用「${profile.name}」` : '配置已保存');
+    setStatus(applyAfterSave ? `已保存并准备启用「${primaryProfile?.name || profile.name}」` : `已保存 ${modelsToSave.length} 个模型配置`);
 
     if (applyAfterSave) {
-        await applyProfile(profile.id);
+        await applyProfile(primaryProfile?.id || profile.id);
     } else {
-        openGroup(getGroupKey(profile));
+        openGroup(getGroupKey(primaryProfile || profile));
     }
     return true;
 }
@@ -685,9 +814,9 @@ function renderHomeView() {
         return `
             <section class="api-profile-manager__empty-state">
                 <div class="api-profile-manager__editor-card">
-                    <h3 class="api-profile-manager__editor-title">还没有接口配置</h3>
-                    <p class="api-profile-manager__empty">先新建一个配置。你可以把同一个接口地址下的不同模型放进同一分组里，之后切换会更快。</p>
-                    <button class="api-profile-manager__button api-profile-manager__button--primary api-profile-manager__button--full" data-action="new-profile">新建第一个配置</button>
+                    <h3 class="api-profile-manager__editor-title">还没有接口分组</h3>
+                    <p class="api-profile-manager__empty">先新建一个分组。后面同一个接口地址和密钥下的多个模型，会自动放在同一个分组里。</p>
+                    <button class="api-profile-manager__button api-profile-manager__button--primary api-profile-manager__button--full" data-action="new-profile">新建第一个分组</button>
                 </div>
             </section>
         `;
@@ -696,11 +825,10 @@ function renderHomeView() {
     const activeProfile = getActiveProfile();
     return `
         <section class="api-profile-manager__home">
-            ${renderStats()}
             <div class="api-profile-manager__section-head">
                 <div>
-                    <h3 class="api-profile-manager__section-title">配置分组</h3>
-                    <p class="api-profile-manager__section-subtitle">按分组管理多个接口配置，同一地址下也可以保存不同模型。</p>
+                    <h3 class="api-profile-manager__section-title">接口分组</h3>
+                    <p class="api-profile-manager__section-subtitle">同一个接口地址和密钥下的多个模型会自动归在一起，方便快速切换。</p>
                 </div>
                 <button class="api-profile-manager__button" data-action="open-tools">工具</button>
             </div>
@@ -712,19 +840,19 @@ function renderHomeView() {
                         <article class="api-profile-manager__group-card">
                             <div class="api-profile-manager__group-top">
                                 <div>
-                                    <span class="api-profile-manager__group-label">分组</span>
+                                    <span class="api-profile-manager__group-label">接口分组</span>
                                     <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
                                     <p class="api-profile-manager__meta">${escapeHtml(group.baseUrl || '未设置接口地址')}</p>
                                 </div>
-                                <span class="api-profile-manager__pill">${group.profiles.length} 个配置</span>
+                                <span class="api-profile-manager__pill">${group.profiles.length} 个模型</span>
                             </div>
                             <div class="api-profile-manager__group-badges">
-                                <span class="api-profile-manager__pill">最新：${escapeHtml(latest?.model || latest?.name || '未命名')}</span>
-                                <span class="api-profile-manager__pill">当前：${escapeHtml(current?.name || '无')}</span>
+                                <span class="api-profile-manager__pill">最新模型：${escapeHtml(latest?.model || latest?.name || '未命名')}</span>
+                                <span class="api-profile-manager__pill">当前模型：${escapeHtml(current?.model || current?.name || '无')}</span>
                             </div>
                             <div class="api-profile-manager__inline-actions">
-                                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="open-group" data-group-key="${escapeHtml(group.key)}">查看分组</button>
-                                <button class="api-profile-manager__button" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增配置</button>
+                                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="open-group" data-group-key="${escapeHtml(group.key)}">进入分组</button>
+                                <button class="api-profile-manager__button" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
                             </div>
                         </article>
                     `;
@@ -746,7 +874,7 @@ function renderGroupView() {
             <div class="api-profile-manager__section-head">
                 <div>
                     <h3 class="api-profile-manager__section-title">${escapeHtml(group.title)}</h3>
-                    <p class="api-profile-manager__section-subtitle">${escapeHtml(group.baseUrl || '未设置接口地址')}</p>
+                    <p class="api-profile-manager__section-subtitle">${escapeHtml(group.baseUrl || '未设置接口地址')} · 共 ${group.profiles.length} 个模型</p>
                 </div>
                 <button class="api-profile-manager__button" data-action="back-home">返回首页</button>
             </div>
@@ -755,27 +883,25 @@ function renderGroupView() {
                     <article class="api-profile-manager__profile-card">
                         <div class="api-profile-manager__profile-top">
                             <div>
-                                <span class="api-profile-manager__profile-label">${profile.id === activeProfile?.id ? '当前使用' : '已保存配置'}</span>
-                                <h3 class="api-profile-manager__profile-name">${escapeHtml(profile.name || '未命名配置')}</h3>
-                                <p class="api-profile-manager__meta">模型：${escapeHtml(profile.model || '未填写')} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))} · ${escapeHtml(getModeLabel(profile.mode))}</p>
+                                <span class="api-profile-manager__profile-label">${profile.id === activeProfile?.id ? '当前模型' : '已保存模型'}</span>
+                                <h3 class="api-profile-manager__profile-name">${escapeHtml(profile.model || profile.name || '未命名模型')}</h3>
+                                <p class="api-profile-manager__meta">${escapeHtml(getModeLabel(profile.mode))} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))}</p>
                             </div>
                             <span class="api-profile-manager__pill">${escapeHtml(profile.updatedAt.slice(0, 10))}</span>
                         </div>
                         <div class="api-profile-manager__profile-badges">
                             <span class="api-profile-manager__pill">地址：${escapeHtml(profile.baseUrl)}</span>
-                            ${profile.model ? `<span class="api-profile-manager__pill">模型：${escapeHtml(profile.model)}</span>` : ''}
                         </div>
                         <div class="api-profile-manager__profile-actions">
                             <button class="api-profile-manager__profile-action api-profile-manager__profile-action--primary" data-action="apply-profile" data-profile-id="${profile.id}">启用</button>
                             <button class="api-profile-manager__profile-action" data-action="edit-profile" data-profile-id="${profile.id}">编辑</button>
-                            <button class="api-profile-manager__profile-action" data-action="duplicate-profile" data-profile-id="${profile.id}">复制</button>
                             <button class="api-profile-manager__profile-action api-profile-manager__profile-action--danger" data-action="delete-profile" data-profile-id="${profile.id}">删除</button>
                         </div>
                     </article>
                 `).join('')}
             </div>
             <div class="api-profile-manager__secondary-actions">
-                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">在此分组新增配置</button>
+                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">在此分组新增模型</button>
             </div>
         </section>
     `;
@@ -791,41 +917,29 @@ function renderProviderOptions(selectedMode, selectedProvider) {
 
 function renderEditorView() {
     const profile = getEditingProfile() ?? defaultProfile();
+    const suggestedModels = getSuggestedModels(profile);
     return `
         <section class="api-profile-manager__editor">
             <div class="api-profile-manager__section-head">
                 <div>
-                    <h3 class="api-profile-manager__section-title">${profile.name ? '编辑配置' : '新建配置'}</h3>
-                    <p class="api-profile-manager__section-subtitle">把同一接口地址下的不同模型放到同一分组，后面切换会更方便。</p>
+                    <h3 class="api-profile-manager__section-title">${profile.model ? '编辑模型配置' : '新建模型配置'}</h3>
+                    <p class="api-profile-manager__section-subtitle">这里只保留高频字段。后面会继续接入模型拉取和多选保存。</p>
                 </div>
                 <button class="api-profile-manager__button" data-action="back-from-editor">返回</button>
             </div>
             <form class="api-profile-manager__editor-card" data-role="editor-form">
                 <div class="api-profile-manager__field-grid">
                     <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">分组名称</span>
-                        <input class="api-profile-manager__input" name="groupName" value="${escapeHtml(profile.groupName)}" placeholder="例如：OpenRouter 主账号">
-                        <span class="api-profile-manager__field-note">不填时会默认按接口地址自动分组。</span>
-                    </label>
-                    <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">配置名称</span>
-                        <input class="api-profile-manager__input" name="name" value="${escapeHtml(profile.name)}" placeholder="例如：Claude 3.7">
-                    </label>
-                    <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">模型名称</span>
-                        <input class="api-profile-manager__input" name="model" value="${escapeHtml(profile.model)}" placeholder="例如：claude-3-7-sonnet">
-                    </label>
-                    <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">接口地址</span>
-                        <input class="api-profile-manager__input" name="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://example.com/v1">
-                    </label>
-                    <label class="api-profile-manager__field">
                         <span class="api-profile-manager__label">连接方式</span>
                         <select class="api-profile-manager__select" name="mode">${renderModeOptions(profile.mode)}</select>
                     </label>
                     <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">接口类型</span>
+                        <span class="api-profile-manager__label">聊天补全来源</span>
                         <select class="api-profile-manager__select" name="provider">${renderProviderOptions(profile.mode, profile.provider)}</select>
+                    </label>
+                    <label class="api-profile-manager__field api-profile-manager__field--full">
+                        <span class="api-profile-manager__label">API URL</span>
+                        <input class="api-profile-manager__input" name="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://example.com/v1">
                     </label>
                     <label class="api-profile-manager__field api-profile-manager__field--full">
                         <span class="api-profile-manager__label">API 密钥</span>
@@ -834,17 +948,21 @@ function renderEditorView() {
                             <button class="api-profile-manager__button" type="button" data-action="toggle-key">${uiState.revealKey ? '隐藏' : '显示'}</button>
                         </div>
                     </label>
-                    <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">请求头名称</span>
-                        <input class="api-profile-manager__input" name="headerName" value="${escapeHtml(profile.headerName)}" placeholder="Authorization">
-                    </label>
-                    <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">请求头值</span>
-                        <input class="api-profile-manager__input" name="headerValue" value="${escapeHtml(profile.headerValue)}" placeholder="Bearer ...">
-                    </label>
                     <label class="api-profile-manager__field api-profile-manager__field--full">
-                        <span class="api-profile-manager__label">备注</span>
-                        <textarea class="api-profile-manager__textarea" name="notes" placeholder="给这个配置写一点说明，方便以后查找。">${escapeHtml(profile.notes)}</textarea>
+                        <span class="api-profile-manager__label">输入模型名称</span>
+                        <input class="api-profile-manager__input" name="model" value="${escapeHtml(profile.model)}" placeholder="例如：claude-3-7-sonnet">
+                    </label>
+                    <div class="api-profile-manager__field api-profile-manager__field--full">
+                        <span class="api-profile-manager__label">模型拉取与多选（即将接入）</span>
+                        <div class="api-profile-manager__secondary-grid">
+                            <button class="api-profile-manager__button" type="button" data-action="fetch-models-placeholder">拉取模型</button>
+                            <select class="api-profile-manager__select api-profile-manager__select--multiple" name="selectedModels" multiple>
+                                ${suggestedModels.length
+                                    ? suggestedModels.map(modelName => `<option value="${escapeHtml(modelName)}" ${(profile.selectedModels ?? []).includes(modelName) ? 'selected' : ''}>${escapeHtml(modelName)}</option>`).join('')
+                                    : '<option disabled>这里会显示可多选模型</option>'}
+                            </select>
+                        </div>
+                        <span class="api-profile-manager__field-note">现在可以先手动多选已有模型名。下一步会接入真实模型拉取。</span>
                     </label>
                 </div>
             </form>
@@ -1082,9 +1200,10 @@ async function openManagerPopup() {
     managerPopup = new Popup(wrapper, POPUP_TYPE.TEXT, '', {
         okButton: false,
         cancelButton: false,
-        wide: true,
+        wider: true,
         large: true,
-        allowVerticalScrolling: false,
+        transparent: true,
+        allowVerticalScrolling: true,
         onClose: () => {
             managerPopup = null;
             setOpen(false);
@@ -1149,6 +1268,9 @@ async function handleClick(event) {
         case 'open-tools':
             uiState.view = 'tools';
             render();
+            break;
+        case 'fetch-models-placeholder':
+            await fetchModelsForEditor();
             break;
         case 'back-home':
             goHome();
