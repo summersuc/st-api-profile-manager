@@ -903,7 +903,7 @@ function renderContent() {
 
 function renderSheet() {
     return `
-        <div class="api-profile-manager__overlay" data-action="close-overlay">
+        <div class="api-profile-manager__overlay">
             <section class="api-profile-manager__sheet" aria-label="API管家面板">
                 <div class="api-profile-manager__grabber"></div>
                 <header class="api-profile-manager__hero">
@@ -1030,6 +1030,7 @@ function render() {
 
     root.innerHTML = renderLauncher();
     panelHost.innerHTML = uiState.isOpen ? renderSheet() : '';
+    panelHost.classList.toggle('is-open', uiState.isOpen);
 
     bindSurfaceEvents(root);
     bindSurfaceEvents(panelHost);
@@ -1038,6 +1039,11 @@ function render() {
 async function handleClick(event) {
     const target = event.target;
     if (!(target instanceof Element)) {
+        return;
+    }
+
+    if (target.classList.contains('api-profile-manager__overlay')) {
+        setOpen(false);
         return;
     }
 
@@ -1059,7 +1065,6 @@ async function handleClick(event) {
             setOpen(true);
             break;
         case 'close-panel':
-        case 'close-overlay':
             setOpen(false);
             break;
         case 'open-tools':

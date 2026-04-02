@@ -49,6 +49,10 @@
     pointer-events: none;
 }
 
+.api-profile-manager__panel-host.is-open {
+    pointer-events: auto;
+}
+
 .api-profile-manager__fab,
 .api-profile-manager__launcher-button {
     display: inline-flex;
