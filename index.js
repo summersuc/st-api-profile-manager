@@ -92,6 +92,8 @@ const uiState = {
     revealKey: false,
 };
 
+let lastLauncherTouchAt = 0;
+
 function clone(value) {
     return structuredClone(value);
 }
@@ -985,7 +987,40 @@ function bindSurfaceEvents(surface) {
         return;
     }
 
+    const handleLauncherTouch = event => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+
+        const launcherButton = target.closest('[data-action="open-panel"]');
+        if (!(launcherButton instanceof HTMLElement)) {
+            return;
+        }
+
+        lastLauncherTouchAt = Date.now();
+        event.preventDefault();
+        event.stopPropagation();
+        handleClick(event).catch(error => {
+            console.error(`${MODULE_NAME}: touch action failed`, error);
+            setStatus(error instanceof Error ? error.message : '操作失败', 'error');
+        });
+    };
+
+    surface.addEventListener('pointerdown', event => {
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+            handleLauncherTouch(event);
+        }
+    });
+    surface.addEventListener('touchstart', handleLauncherTouch, { passive: false });
     surface.addEventListener('click', event => {
+        const target = event.target;
+        if (target instanceof Element && target.closest('[data-action="open-panel"]') && Date.now() - lastLauncherTouchAt < 800) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+
         handleClick(event).catch(error => {
             console.error(`${MODULE_NAME}: click action failed`, error);
             setStatus(error instanceof Error ? error.message : '操作失败', 'error');
