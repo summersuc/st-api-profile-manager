@@ -46,6 +46,11 @@
     z-index: 40000;
 }
 
+.api-profile-manager__popup-content {
+    width: min(100vw - 32px, 980px);
+    max-width: 980px;
+}
+
 .api-profile-manager__fab,
 .api-profile-manager__launcher-button {
     display: inline-flex;
@@ -143,6 +148,11 @@
     color: var(--apm-text);
     box-shadow: var(--apm-shadow-sheet);
     overflow: hidden;
+}
+
+.api-profile-manager__sheet--popup {
+    width: 100%;
+    max-height: min(85vh, 960px);
 }
 
 .api-profile-manager__grabber {
@@ -626,6 +636,11 @@
 }
 
 @media (max-width: 720px) {
+    .api-profile-manager__popup-content {
+        width: calc(100vw - 12px);
+        max-width: none;
+    }
+
     .api-profile-manager__overlay {
         position: fixed;
         inset: 0;

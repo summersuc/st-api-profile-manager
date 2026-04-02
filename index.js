@@ -1,6 +1,6 @@
 import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings, renderExtensionTemplateAsync } from '../../../extensions.js';
-import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
+import { callGenericPopup, POPUP_RESULT, POPUP_TYPE, Popup } from '../../../popup.js';
 import { writeSecret } from '../../../secrets.js';
 
 const MODULE_DIRECTORY = (() => {
@@ -93,6 +93,7 @@ const uiState = {
 };
 
 let lastLauncherTouchAt = 0;
+let managerPopup = null;
 
 function clone(value) {
     return structuredClone(value);
@@ -214,6 +215,11 @@ function getCurrentGroup() {
 }
 
 function getEditorForm() {
+    const popupForm = managerPopup?.dlg?.querySelector?.('[data-role="editor-form"]');
+    if (popupForm instanceof HTMLFormElement) {
+        return popupForm;
+    }
+
     const rootForm = dom.root?.querySelector?.('[data-role="editor-form"]');
     return rootForm instanceof HTMLFormElement ? rootForm : null;
 }
@@ -222,6 +228,15 @@ function setStatus(message, type = 'success') {
     uiState.status = message;
     uiState.statusType = type;
     render();
+
+    if (managerPopup?.dlg?.isConnected) {
+        const statusBar = managerPopup.dlg.querySelector('.api-profile-manager__status-bar');
+        if (statusBar instanceof HTMLElement) {
+            statusBar.textContent = message;
+            statusBar.classList.remove('is-error', 'is-success');
+            statusBar.classList.add(type === 'error' ? 'is-error' : 'is-success');
+        }
+    }
 }
 
 function getMountTarget() {
@@ -888,31 +903,29 @@ function renderContent() {
 
 function renderSheet() {
     return `
-        <div class="api-profile-manager__overlay">
-            <section class="api-profile-manager__sheet" aria-label="API管家面板">
-                <div class="api-profile-manager__grabber"></div>
-                <header class="api-profile-manager__hero">
-                    <div>
-                        <p class="api-profile-manager__eyebrow">API管家</p>
-                        <h2 class="api-profile-manager__title">${uiState.view === 'home' ? '接口配置首页' : uiState.view === 'group' ? '分组详情' : uiState.view === 'tools' ? '工具与备份' : '配置编辑'}</h2>
-                        <p class="api-profile-manager__subtitle">方便保存多个 API 配置、分组整理同地址多模型，并快速切换到你想用的方案。</p>
-                        <div class="api-profile-manager__status-bar ${uiState.statusType === 'error' ? 'is-error' : 'is-success'}">${escapeHtml(uiState.status)}</div>
-                    </div>
-                    <div class="api-profile-manager__hero-actions">
-                        <span class="api-profile-manager__pill">${escapeHtml(getActiveProfile()?.name || '未启用')}</span>
-                        <button class="api-profile-manager__sheet-close" data-action="close-panel" aria-label="关闭面板">×</button>
-                    </div>
-                </header>
-                <div class="api-profile-manager__content">${renderContent()}</div>
-                <footer class="api-profile-manager__footer">
-                    <div class="api-profile-manager__inline-actions">
-                        <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile">新建配置</button>
-                        <button class="api-profile-manager__button" data-action="open-tools">工具</button>
-                        <button class="api-profile-manager__button api-profile-manager__button--ghost" data-action="close-panel">关闭</button>
-                    </div>
-                </footer>
-            </section>
-        </div>
+        <section class="api-profile-manager__sheet api-profile-manager__sheet--popup" aria-label="API管家面板">
+            <div class="api-profile-manager__grabber"></div>
+            <header class="api-profile-manager__hero">
+                <div>
+                    <p class="api-profile-manager__eyebrow">API管家</p>
+                    <h2 class="api-profile-manager__title">${uiState.view === 'home' ? '接口配置首页' : uiState.view === 'group' ? '分组详情' : uiState.view === 'tools' ? '工具与备份' : '配置编辑'}</h2>
+                    <p class="api-profile-manager__subtitle">方便保存多个 API 配置、分组整理同地址多模型，并快速切换到你想用的方案。</p>
+                    <div class="api-profile-manager__status-bar ${uiState.statusType === 'error' ? 'is-error' : 'is-success'}">${escapeHtml(uiState.status)}</div>
+                </div>
+                <div class="api-profile-manager__hero-actions">
+                    <span class="api-profile-manager__pill">${escapeHtml(getActiveProfile()?.name || '未启用')}</span>
+                    <button class="api-profile-manager__sheet-close" data-action="close-panel" aria-label="关闭面板">×</button>
+                </div>
+            </header>
+            <div class="api-profile-manager__content">${renderContent()}</div>
+            <footer class="api-profile-manager__footer">
+                <div class="api-profile-manager__inline-actions">
+                    <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile">新建配置</button>
+                    <button class="api-profile-manager__button" data-action="open-tools">工具</button>
+                    <button class="api-profile-manager__button api-profile-manager__button--ghost" data-action="close-panel">关闭</button>
+                </div>
+            </footer>
+        </section>
     `;
 }
 
@@ -1045,10 +1058,44 @@ function render() {
         return;
     }
 
-    root.innerHTML = `${renderLauncher()}${uiState.isOpen ? renderSheet() : ''}`;
-    root.classList.toggle('is-open', uiState.isOpen);
+    root.innerHTML = renderLauncher();
+    root.classList.remove('is-open');
 
     bindSurfaceEvents(root);
+
+    if (managerPopup?.dlg?.isConnected) {
+        const content = managerPopup.dlg.querySelector('.api-profile-manager__popup-content');
+        if (content instanceof HTMLElement) {
+            content.innerHTML = renderSheet();
+        }
+        bindSurfaceEvents(managerPopup.dlg);
+    }
+}
+
+async function openManagerPopup() {
+    setOpen(true);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'api-profile-manager api-profile-manager__popup-content';
+    wrapper.innerHTML = renderSheet();
+
+    managerPopup = new Popup(wrapper, POPUP_TYPE.TEXT, '', {
+        okButton: false,
+        cancelButton: false,
+        wide: true,
+        large: true,
+        allowVerticalScrolling: false,
+        onClose: () => {
+            managerPopup = null;
+            setOpen(false);
+        },
+    });
+
+    bindSurfaceEvents(managerPopup.dlg);
+    managerPopup.show().catch(error => {
+        console.error(`${MODULE_NAME}: popup show failed`, error);
+        setStatus('面板打开失败', 'error');
+    });
 }
 
 async function handleClick(event) {
@@ -1090,10 +1137,14 @@ async function handleClick(event) {
 
     switch (action) {
         case 'open-panel':
-            setOpen(true);
+            await openManagerPopup();
             break;
         case 'close-panel':
-            setOpen(false);
+            if (managerPopup) {
+                await managerPopup.complete(POPUP_RESULT.CANCELLED);
+            } else {
+                setOpen(false);
+            }
             break;
         case 'open-tools':
             uiState.view = 'tools';
@@ -1163,7 +1214,9 @@ async function handleClick(event) {
             break;
         case 'toggle-mask-default': {
             const settings = getSettings();
-            const checkbox = button instanceof HTMLInputElement ? button : dom.root.querySelector('[data-action="toggle-mask-default"]');
+            const checkbox = button instanceof HTMLInputElement
+                ? button
+                : managerPopup?.dlg?.querySelector?.('[data-action="toggle-mask-default"]') || dom.root.querySelector('[data-action="toggle-mask-default"]');
             settings.preferences.maskKeysByDefault = checkbox instanceof HTMLInputElement ? checkbox.checked : settings.preferences.maskKeysByDefault;
             persist();
             setStatus(settings.preferences.maskKeysByDefault ? '已设为默认隐藏密钥' : '已设为默认显示密钥');
