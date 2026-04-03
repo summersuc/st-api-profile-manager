@@ -94,6 +94,7 @@ const uiState = {
     status: '就绪',
     statusType: 'success',
     revealKey: false,
+    isLightMode: false,
 };
 
 let lastLauncherTouchAt = 0;
@@ -397,28 +398,78 @@ function getProviderConfig(profile) {
         : CHAT_PROVIDER_CONFIG[profile.provider] ?? null;
 }
 
-function setInputValue(selectors, value) {
+function sleep(milliseconds) {
+    return new Promise(resolve => window.setTimeout(resolve, milliseconds));
+}
+
+async function waitForCondition(checker, { timeout = 1200, interval = 50 } = {}) {
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() <= deadline) {
+        if (checker()) {
+            return true;
+        }
+        await sleep(interval);
+    }
+
+    return checker();
+}
+
+function getWritableControl(selector) {
+    const element = document.querySelector(selector);
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+        return element;
+    }
+    return null;
+}
+
+function readControlValue(selector) {
+    const element = getWritableControl(selector);
+    return element ? String(element.value ?? '') : null;
+}
+
+async function waitForControlValue(selector, expectedValue, options) {
+    return await waitForCondition(() => readControlValue(selector) === String(expectedValue ?? ''), options);
+}
+
+async function waitForControl(selector, options) {
+    return await waitForCondition(() => getWritableControl(selector) !== null, options);
+}
+
+async function setInputValue(selectors, value) {
+    const nextValue = String(value ?? '');
+
     for (const selector of selectors) {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
             continue;
         }
-        element.value = value;
+
+        element.focus();
+        element.value = nextValue;
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
+
+        if (await waitForControlValue(selector, nextValue)) {
+            return true;
+        }
     }
+
     return false;
 }
 
-function setSelectValue(selector, value) {
+async function setSelectValue(selector, value) {
     const element = document.querySelector(selector);
     if (!(element instanceof HTMLSelectElement)) {
         return false;
     }
-    element.value = value;
+
+    const nextValue = String(value ?? '');
+    element.focus();
+    element.value = nextValue;
     element.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+
+    return await waitForControlValue(selector, nextValue);
 }
 
 function clickElement(selector) {
@@ -430,23 +481,25 @@ function clickElement(selector) {
     return true;
 }
 
-function applyModelToControl(selector, model) {
+async function applyModelToControl(selector, model) {
     if (!selector || !normalizeText(model)) {
         return false;
     }
 
     const element = document.querySelector(selector);
     if (element instanceof HTMLSelectElement) {
+        element.focus();
         element.value = model;
         element.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
+        return await waitForControlValue(selector, model);
     }
 
     if (element instanceof HTMLInputElement) {
+        element.focus();
         element.value = model;
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
+        return await waitForControlValue(selector, model);
     }
 
     return false;
@@ -501,7 +554,7 @@ function readEditorProfile() {
     base.headerName = 'Authorization';
     base.headerValue = '';
     base.notes = '';
-    base.name = base.model || base.name || base.baseUrl;
+    base.name = base.name || base.model || base.baseUrl;
     base.groupName = base.groupName || base.baseUrl;
     base.updatedAt = new Date().toISOString();
     return base;
@@ -553,10 +606,13 @@ async function saveCurrentEditorProfile({ applyAfterSave = false } = {}) {
     });
 
     for (const modelName of modelsToSave) {
+        const resolvedName = modelsToSave.length > 1
+            ? modelName
+            : normalizeText(profile.name) || modelName;
         const nextProfile = {
             ...clone(profile),
             id: primaryProfile ? crypto.randomUUID() : profile.id,
-            name: modelName,
+            name: resolvedName,
             model: modelName,
             selectedModels: modelsToSave,
             groupName: profile.groupName || profile.baseUrl,
@@ -656,19 +712,46 @@ async function applyProfile(profileId) {
         return;
     }
 
-    const settings = getSettings();
-    settings.activeProfileId = profile.id;
-    persist();
+    const mainApiValue = profile.mode === 'text-generation' ? 'textgenerationwebui' : 'openai';
+    const stageOneSelector = config.sourceSelector || config.typeSelector || '';
+    const stageOneValue = config.sourceValue || config.typeValue || '';
 
-    const mainApiApplied = setSelectValue('#main_api', profile.mode === 'text-generation' ? 'textgenerationwebui' : 'openai');
-    const sourceApplied = config.sourceSelector && config.sourceValue
-        ? setSelectValue(config.sourceSelector, config.sourceValue)
-        : config.typeSelector && config.typeValue
-            ? setSelectValue(config.typeSelector, config.typeValue)
-            : false;
-    const urlApplied = config.urlSelector ? setInputValue([config.urlSelector], profile.baseUrl) : false;
-    const visibleKeyApplied = config.secretKey ? setInputValue([`#${config.secretKey}`], profile.apiKey) : false;
-    const modelApplied = config.modelSelector ? applyModelToControl(config.modelSelector, profile.model) : false;
+    const mainApiApplied = await setSelectValue('#main_api', mainApiValue);
+    if (!mainApiApplied) {
+        setStatus('应用未完成：无法切换 SillyTavern 当前 API 连接方式', 'error');
+        return;
+    }
+
+    await sleep(120);
+
+    const sourceApplied = stageOneSelector && stageOneValue
+        ? await setSelectValue(stageOneSelector, stageOneValue)
+        : false;
+
+    if (!sourceApplied) {
+        setStatus('应用未完成：无法切换 SillyTavern 当前来源 / 类型', 'error');
+        return;
+    }
+
+    await sleep(180);
+
+    const controlsToWaitFor = [
+        config.urlSelector,
+        config.modelSelector,
+        config.secretKey ? `#${config.secretKey}` : '',
+    ].filter(Boolean);
+
+    const controlReadiness = await Promise.all(controlsToWaitFor.map(selector => waitForControl(selector)));
+    const allControlsReady = controlReadiness.every(Boolean);
+
+    if (!allControlsReady) {
+        setStatus('应用未完成：切换来源后，SillyTavern 的目标控件还没有准备好', 'error');
+        return;
+    }
+
+    const urlApplied = config.urlSelector ? await setInputValue([config.urlSelector], profile.baseUrl) : true;
+    const visibleKeyApplied = config.secretKey ? await setInputValue([`#${config.secretKey}`], profile.apiKey) : true;
+    const modelApplied = config.modelSelector ? await applyModelToControl(config.modelSelector, profile.model) : true;
     let secretApplied = false;
 
     if (config.secretKey) {
@@ -682,15 +765,23 @@ async function applyProfile(profileId) {
 
     const connectTriggered = config.connectButton ? clickElement(config.connectButton) : false;
 
-    const requiredApplied = mainApiApplied && sourceApplied && (urlApplied || !config.urlSelector) && (modelApplied || !config.modelSelector);
+    const requiredApplied = mainApiApplied
+        && sourceApplied
+        && urlApplied
+        && modelApplied;
 
     if (requiredApplied) {
+        const settings = getSettings();
+        settings.activeProfileId = profile.id;
+        persist();
+
         const parts = [
             mainApiApplied ? '连接方式' : null,
             sourceApplied ? '来源' : null,
             urlApplied ? '地址' : null,
             secretApplied || visibleKeyApplied ? '密钥' : null,
             modelApplied ? '模型' : null,
+            connectTriggered ? '连接' : null,
         ].filter(Boolean);
         const detail = parts.length ? `（已写入：${parts.join('、')}）` : '';
         setStatus(`已启用「${profile.name}」${detail}`);
@@ -828,6 +919,50 @@ function getHomeStats() {
     };
 }
 
+function formatDateLabel(value) {
+    if (!value) {
+        return '刚刚更新';
+    }
+
+    try {
+        return new Date(value).toLocaleDateString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+        });
+    } catch {
+        return String(value).slice(0, 10);
+    }
+}
+
+function getSheetMeta() {
+    switch (uiState.view) {
+        case 'group':
+            return {
+                eyebrow: '分组总览',
+                title: '同地址模型集中切换',
+                subtitle: '把一个接口地址下的模型放在同一处管理，随时启用、编辑或补充新模型。',
+            };
+        case 'editor':
+            return {
+                eyebrow: '配置编辑器',
+                title: '整理连接信息与模型方案',
+                subtitle: '只改视觉，不改业务逻辑；保存、启用、拉取模型和密钥显示方式都保持原有行为。',
+            };
+        case 'tools':
+            return {
+                eyebrow: '备份与偏好',
+                title: '导入、导出与显示设置',
+                subtitle: '把低频操作收纳到一个地方，常用切换动作继续放在首页和分组视图。',
+            };
+        default:
+            return {
+                eyebrow: 'API 管家',
+                title: '把常用接口配置整理成一眼能看懂的工作台',
+                subtitle: '快速查看当前启用方案、按分组管理多模型，并在需要时立刻保存或切换。',
+            };
+    }
+}
+
 function renderStats() {
     const stats = getHomeStats();
     return `
@@ -835,14 +970,17 @@ function renderStats() {
             <article class="api-profile-manager__stat-card">
                 <span class="api-profile-manager__stat-label">分组数</span>
                 <span class="api-profile-manager__stat-value">${stats.groupCount}</span>
+                <span class="api-profile-manager__stat-note">按接口地址或分组名归拢</span>
             </article>
             <article class="api-profile-manager__stat-card">
                 <span class="api-profile-manager__stat-label">配置数</span>
                 <span class="api-profile-manager__stat-value">${stats.profileCount}</span>
+                <span class="api-profile-manager__stat-note">支持同组多个模型快速保存</span>
             </article>
             <article class="api-profile-manager__stat-card">
                 <span class="api-profile-manager__stat-label">当前启用</span>
                 <span class="api-profile-manager__stat-value">${escapeHtml(stats.activeLabel)}</span>
+                <span class="api-profile-manager__stat-note">面板内可直接应用切换</span>
             </article>
         </div>
     `;
@@ -853,11 +991,17 @@ function renderHomeView() {
     if (!groups.length) {
         return `
             <section class="api-profile-manager__empty-state">
-                <div class="api-profile-manager__editor-card">
-                    <h3 class="api-profile-manager__editor-title">还没有接口分组</h3>
-                    <p class="api-profile-manager__empty">先新建一个分组。后面同一个接口地址和密钥下的多个模型，会自动放在同一个分组里。</p>
-                    <button class="api-profile-manager__button api-profile-manager__button--primary api-profile-manager__button--full" data-action="new-profile">新建第一个分组</button>
-                </div>
+                <article class="api-profile-manager__welcome-card api-profile-manager__welcome-card--empty">
+                    <div class="api-profile-manager__welcome-copy">
+                        <p class="api-profile-manager__eyebrow">新的开始</p>
+                        <h3 class="api-profile-manager__section-title">还没有接口分组</h3>
+                        <p class="api-profile-manager__empty">先保存一个接口方案。相同接口地址与来源下的多个模型，后面会自动聚合到同一个分组里。</p>
+                    </div>
+                    <div class="api-profile-manager__welcome-actions">
+                        <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile">新建第一个分组</button>
+                        <button class="api-profile-manager__button" data-action="open-tools">打开工具</button>
+                    </div>
+                </article>
             </section>
         `;
     }
@@ -865,41 +1009,64 @@ function renderHomeView() {
     const activeProfile = getActiveProfile();
     return `
         <section class="api-profile-manager__home">
+            <article class="api-profile-manager__welcome-card">
+                <div class="api-profile-manager__welcome-copy">
+                    <p class="api-profile-manager__eyebrow">工作台</p>
+                    <h3 class="api-profile-manager__section-title">快速管理你的接口分组与模型配置</h3>
+                    <p class="api-profile-manager__section-subtitle">首页保留最常用的动作：看当前启用、展开分组、应用模型、继续编辑，低频备份操作则收纳到工具页。</p>
+                </div>
+                <div class="api-profile-manager__welcome-actions">
+                    <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile">新建配置</button>
+                    <button class="api-profile-manager__button" data-action="open-tools">工具与备份</button>
+                </div>
+            </article>
+            ${renderStats()}
             <div class="api-profile-manager__section-head">
                 <div>
                     <h3 class="api-profile-manager__section-title">接口分组</h3>
+                    <p class="api-profile-manager__section-subtitle">展开后可以直接应用、编辑或删除单个模型配置。</p>
                 </div>
-                <button class="api-profile-manager__button" data-action="open-tools">工具</button>
+                <span class="api-profile-manager__pill api-profile-manager__pill--accent">当前：${escapeHtml(activeProfile?.name || '未启用')}</span>
             </div>
             <div class="api-profile-manager__group-list">
                 ${groups.map(group => {
                     const current = group.profiles.find(profile => profile.id === activeProfile?.id);
                     const latest = group.profiles[0];
                     const isExpanded = uiState.activeGroupKey === group.key;
+                    const latestProvider = latest ? `${getModeLabel(latest.mode)} · ${getProviderLabel(latest.mode, latest.provider)}` : '未设置来源';
                     return `
-                        <article class="api-profile-manager__group-card ${isExpanded ? 'is-expanded' : ''}">
+                        <article class="api-profile-manager__group-card ${isExpanded ? 'is-expanded' : ''} ${current ? 'is-active' : ''}">
                             <div class="api-profile-manager__group-top" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
                                 <div>
-                                    <span class="api-profile-manager__group-label">接口分组</span>
+                                    <span class="api-profile-manager__group-label">${current ? '当前接口组' : '接口分组'}</span>
                                     <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
                                     <p class="api-profile-manager__meta">${escapeHtml(group.baseUrl || '未设置接口地址')}</p>
                                 </div>
-                                <span class="api-profile-manager__pill">${group.profiles.length} 个模型 ${isExpanded ? '▾' : '▸'}</span>
+                                <div class="api-profile-manager__group-side">
+                                    ${current ? '<span class="api-profile-manager__pill api-profile-manager__pill--success">已启用</span>' : ''}
+                                    <span class="api-profile-manager__group-count">${group.profiles.length} 个模型 ${isExpanded ? '▾' : '▸'}</span>
+                                </div>
                             </div>
                             <div class="api-profile-manager__group-badges">
+                                <span class="api-profile-manager__pill">默认来源：${escapeHtml(latestProvider)}</span>
                                 <span class="api-profile-manager__pill">最新模型：${escapeHtml(latest?.model || latest?.name || '未命名')}</span>
                                 <span class="api-profile-manager__pill">当前模型：${escapeHtml(current?.model || current?.name || '无')}</span>
                             </div>
                             <div class="api-profile-manager__inline-actions">
-                                <button class="api-profile-manager__button" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
+                                <button class="api-profile-manager__button" data-action="open-group" data-group-key="${escapeHtml(group.key)}">查看详情</button>
+                                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
                             </div>
                             ${isExpanded ? `
                                 <div class="api-profile-manager__drawer-list">
                                     ${group.profiles.map(profile => `
-                                        <article class="api-profile-manager__drawer-item">
-                                            <div>
-                                                <h4 class="api-profile-manager__drawer-title">${escapeHtml(profile.name || profile.model || '未命名模型')}</h4>
-                                                <p class="api-profile-manager__meta">${escapeHtml(profile.model || '未填写模型')} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))}</p>
+                                        <article class="api-profile-manager__drawer-item ${profile.id === activeProfile?.id ? 'is-active' : ''}">
+                                            <div class="api-profile-manager__drawer-copy">
+                                                <div class="api-profile-manager__drawer-head">
+                                                    <h4 class="api-profile-manager__drawer-title">${escapeHtml(profile.name || profile.model || '未命名模型')}</h4>
+                                                    ${profile.id === activeProfile?.id ? '<span class="api-profile-manager__pill api-profile-manager__pill--accent">当前启用</span>' : ''}
+                                                </div>
+                                                <p class="api-profile-manager__meta">${escapeHtml(profile.model || '未填写模型')} · ${escapeHtml(getModeLabel(profile.mode))} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))}</p>
+                                                <p class="api-profile-manager__meta">最近更新：${escapeHtml(formatDateLabel(profile.updatedAt))}</p>
                                             </div>
                                             <div class="api-profile-manager__drawer-actions">
                                                 <button class="api-profile-manager__profile-action api-profile-manager__profile-action--primary" data-action="apply-profile" data-profile-id="${profile.id}">应用</button>
@@ -927,26 +1094,31 @@ function renderGroupView() {
     const activeProfile = getActiveProfile();
     return `
         <section class="api-profile-manager__home">
-            <div class="api-profile-manager__section-head">
-                <div>
+            <article class="api-profile-manager__welcome-card api-profile-manager__welcome-card--compact">
+                <div class="api-profile-manager__welcome-copy">
+                    <p class="api-profile-manager__eyebrow">分组详情</p>
                     <h3 class="api-profile-manager__section-title">${escapeHtml(group.title)}</h3>
-                    <p class="api-profile-manager__section-subtitle">${escapeHtml(group.baseUrl || '未设置接口地址')} · 共 ${group.profiles.length} 个模型</p>
+                    <p class="api-profile-manager__section-subtitle">${escapeHtml(group.baseUrl || '未设置接口地址')} · 共 ${group.profiles.length} 个模型 · 可在此继续扩充同组配置。</p>
                 </div>
-                <button class="api-profile-manager__button" data-action="back-home">返回首页</button>
-            </div>
+                <div class="api-profile-manager__welcome-actions">
+                    <button class="api-profile-manager__button" data-action="back-home">返回首页</button>
+                    <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
+                </div>
+            </article>
             <div class="api-profile-manager__profile-list">
                 ${group.profiles.map(profile => `
-                    <article class="api-profile-manager__profile-card">
+                    <article class="api-profile-manager__profile-card ${profile.id === activeProfile?.id ? 'is-active' : ''}">
                         <div class="api-profile-manager__profile-top">
                             <div>
                                 <span class="api-profile-manager__profile-label">${profile.id === activeProfile?.id ? '当前模型' : '已保存模型'}</span>
                                 <h3 class="api-profile-manager__profile-name">${escapeHtml(profile.model || profile.name || '未命名模型')}</h3>
                                 <p class="api-profile-manager__meta">${escapeHtml(getModeLabel(profile.mode))} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))}</p>
                             </div>
-                            <span class="api-profile-manager__pill">${escapeHtml(profile.updatedAt.slice(0, 10))}</span>
+                            <span class="api-profile-manager__pill">${escapeHtml(formatDateLabel(profile.updatedAt))}</span>
                         </div>
                         <div class="api-profile-manager__profile-badges">
                             <span class="api-profile-manager__pill">地址：${escapeHtml(profile.baseUrl)}</span>
+                            ${profile.id === activeProfile?.id ? '<span class="api-profile-manager__pill api-profile-manager__pill--success">正在使用</span>' : ''}
                         </div>
                         <div class="api-profile-manager__profile-actions">
                             <button class="api-profile-manager__profile-action api-profile-manager__profile-action--primary" data-action="apply-profile" data-profile-id="${profile.id}">启用</button>
@@ -955,9 +1127,6 @@ function renderGroupView() {
                         </div>
                     </article>
                 `).join('')}
-            </div>
-            <div class="api-profile-manager__secondary-actions">
-                <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">在此分组新增模型</button>
             </div>
         </section>
     `;
@@ -976,50 +1145,104 @@ function renderEditorView() {
     const suggestedModels = getSuggestedModels(profile);
     return `
         <section class="api-profile-manager__editor">
-            <div class="api-profile-manager__section-head">
-                <div>
+            <article class="api-profile-manager__welcome-card api-profile-manager__welcome-card--compact">
+                <div class="api-profile-manager__welcome-copy">
+                    <p class="api-profile-manager__eyebrow">编辑器</p>
                     <h3 class="api-profile-manager__section-title">${profile.model ? '编辑模型配置' : '新建模型配置'}</h3>
+                    <p class="api-profile-manager__section-subtitle">按展示信息、连接参数和模型保存策略分区整理，方便在手机上快速确认和修改。</p>
                 </div>
-                <button class="api-profile-manager__button" data-action="back-from-editor">返回</button>
-            </div>
+                <div class="api-profile-manager__welcome-actions">
+                    <button class="api-profile-manager__button" data-action="back-from-editor">返回</button>
+                </div>
+            </article>
             <form class="api-profile-manager__editor-card" data-role="editor-form">
-                <div class="api-profile-manager__field-grid">
-                    <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">连接方式</span>
-                        <select class="api-profile-manager__select" name="mode">${renderModeOptions(profile.mode)}</select>
-                    </label>
-                    <label class="api-profile-manager__field">
-                        <span class="api-profile-manager__label">聊天补全来源</span>
-                        <select class="api-profile-manager__select" name="provider">${renderProviderOptions(profile.mode, profile.provider)}</select>
-                    </label>
-                    <label class="api-profile-manager__field api-profile-manager__field--full">
-                        <span class="api-profile-manager__label">API URL</span>
-                        <input class="api-profile-manager__input" name="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://example.com/v1">
-                    </label>
-                    <label class="api-profile-manager__field api-profile-manager__field--full">
-                        <span class="api-profile-manager__label">API 密钥</span>
-                        <div class="api-profile-manager__secret">
-                            <input class="api-profile-manager__input" name="apiKey" type="${uiState.revealKey ? 'text' : 'password'}" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off">
-                            <button class="api-profile-manager__button" type="button" data-action="toggle-key">${uiState.revealKey ? '隐藏' : '显示'}</button>
+                <section class="api-profile-manager__editor-section">
+                    <div class="api-profile-manager__editor-section-head">
+                        <div>
+                            <p class="api-profile-manager__section-kicker">展示层</p>
+                            <h4 class="api-profile-manager__editor-title">分组与展示信息</h4>
+                            <p class="api-profile-manager__section-subtitle">决定首页怎么归类这条配置；留空时仍会按地址自动补全分组名。</p>
                         </div>
-                    </label>
-                    <label class="api-profile-manager__field api-profile-manager__field--full">
-                        <span class="api-profile-manager__label">输入模型名称</span>
-                        <input class="api-profile-manager__input" name="model" value="${escapeHtml(profile.model)}" placeholder="例如：claude-3-7-sonnet">
-                    </label>
-                    <div class="api-profile-manager__field api-profile-manager__field--full">
-                        <span class="api-profile-manager__label">模型拉取与多选</span>
-                        <div class="api-profile-manager__secondary-grid">
-                            <button class="api-profile-manager__button" type="button" data-action="fetch-models-placeholder">拉取模型</button>
-                            <select class="api-profile-manager__select api-profile-manager__select--multiple" name="selectedModels" multiple>
-                                ${suggestedModels.length
-                                    ? suggestedModels.map(modelName => `<option value="${escapeHtml(modelName)}" ${(profile.selectedModels ?? []).includes(modelName) ? 'selected' : ''}>${escapeHtml(modelName)}</option>`).join('')
-                                    : '<option disabled>这里会显示可多选模型</option>'}
-                            </select>
+                    </div>
+                    <div class="api-profile-manager__field-grid">
+                        <label class="api-profile-manager__field">
+                            <span class="api-profile-manager__label">配置名称</span>
+                            <input class="api-profile-manager__input" name="name" value="${escapeHtml(profile.name)}" placeholder="例如：我的 Claude / 主力接口">
+                        </label>
+                        <label class="api-profile-manager__field api-profile-manager__field--full">
+                            <span class="api-profile-manager__label">分组名称</span>
+                            <input class="api-profile-manager__input" name="groupName" value="${escapeHtml(profile.groupName)}" placeholder="例如：主力 OpenAI / 本地推理服务">
+                        </label>
+                    </div>
+                </section>
+                <section class="api-profile-manager__editor-section">
+                    <div class="api-profile-manager__editor-section-head">
+                        <div>
+                            <p class="api-profile-manager__section-kicker">连接配置</p>
+                            <h4 class="api-profile-manager__editor-title">来源、模式与接口地址</h4>
+                            <p class="api-profile-manager__section-subtitle">这些字段会继续沿用现有保存逻辑与 SillyTavern 自动写入逻辑。</p>
                         </div>
-                        <span class="api-profile-manager__field-note">如果你已经多选了模型，保存时会直接生成同组下的多个模型配置。</span>
-                    </label>
-                </div>
+                    </div>
+                    <div class="api-profile-manager__field-grid">
+                        <label class="api-profile-manager__field">
+                            <span class="api-profile-manager__label">连接方式</span>
+                            <select class="api-profile-manager__select" name="mode">${renderModeOptions(profile.mode)}</select>
+                        </label>
+                        <label class="api-profile-manager__field">
+                            <span class="api-profile-manager__label">数据来源</span>
+                            <select class="api-profile-manager__select" name="provider">${renderProviderOptions(profile.mode, profile.provider)}</select>
+                        </label>
+                        <label class="api-profile-manager__field api-profile-manager__field--full">
+                            <span class="api-profile-manager__label">API URL</span>
+                            <input class="api-profile-manager__input" name="baseUrl" value="${escapeHtml(profile.baseUrl)}" placeholder="https://example.com/v1">
+                        </label>
+                    </div>
+                </section>
+                <section class="api-profile-manager__editor-section">
+                    <div class="api-profile-manager__editor-section-head">
+                        <div>
+                            <p class="api-profile-manager__section-kicker">鉴权</p>
+                            <h4 class="api-profile-manager__editor-title">API 密钥</h4>
+                            <p class="api-profile-manager__section-subtitle">保留原有显示 / 隐藏行为，方便临时检查或复制密钥。</p>
+                        </div>
+                    </div>
+                    <div class="api-profile-manager__field-grid">
+                        <label class="api-profile-manager__field api-profile-manager__field--full">
+                            <span class="api-profile-manager__label">API 密钥</span>
+                            <div class="api-profile-manager__secret">
+                                <input class="api-profile-manager__input" name="apiKey" type="${uiState.revealKey ? 'text' : 'password'}" value="${escapeHtml(profile.apiKey)}" placeholder="sk-..." autocomplete="off">
+                                <button class="api-profile-manager__button" type="button" data-action="toggle-key">${uiState.revealKey ? '隐藏' : '显示'}</button>
+                            </div>
+                        </label>
+                    </div>
+                </section>
+                <section class="api-profile-manager__editor-section">
+                    <div class="api-profile-manager__editor-section-head">
+                        <div>
+                            <p class="api-profile-manager__section-kicker">模型策略</p>
+                            <h4 class="api-profile-manager__editor-title">模型名称与批量保存</h4>
+                            <p class="api-profile-manager__section-subtitle">单个主模型用于当前配置，多选列表则会在保存时生成同组下的多个模型配置。</p>
+                        </div>
+                    </div>
+                    <div class="api-profile-manager__field-grid">
+                        <label class="api-profile-manager__field api-profile-manager__field--full">
+                            <span class="api-profile-manager__label">输入模型名称</span>
+                            <input class="api-profile-manager__input" name="model" value="${escapeHtml(profile.model)}" placeholder="例如：claude-3-7-sonnet">
+                        </label>
+                        <div class="api-profile-manager__field api-profile-manager__field--full">
+                            <span class="api-profile-manager__label">模型拉取与多选</span>
+                            <div class="api-profile-manager__secondary-grid">
+                                <button class="api-profile-manager__button" type="button" data-action="fetch-models-placeholder">拉取模型</button>
+                                <select class="api-profile-manager__select api-profile-manager__select--multiple" name="selectedModels" multiple>
+                                    ${suggestedModels.length
+                                        ? suggestedModels.map(modelName => `<option value="${escapeHtml(modelName)}" ${(profile.selectedModels ?? []).includes(modelName) ? 'selected' : ''}>${escapeHtml(modelName)}</option>`).join('')
+                                        : '<option disabled>这里会显示可多选模型</option>'}
+                                </select>
+                            </div>
+                            <span class="api-profile-manager__field-note">如果你已经多选了模型，保存时会直接生成同组下的多个模型配置。</span>
+                        </div>
+                    </div>
+                </section>
             </form>
             <div class="api-profile-manager__secondary-actions">
                 <button class="api-profile-manager__button" data-action="save-profile">保存</button>
@@ -1075,19 +1298,33 @@ function renderContent() {
 }
 
 function renderSheet() {
+    const meta = getSheetMeta();
     return `
         <section class="api-profile-manager__sheet api-profile-manager__sheet--popup" aria-label="API管家面板">
             <div class="api-profile-manager__grabber"></div>
             <header class="api-profile-manager__hero">
-                <div>
-                    <p class="api-profile-manager__eyebrow">API管家</p>
-                    <h2 class="api-profile-manager__title">${uiState.view === 'home' ? '接口配置首页' : uiState.view === 'group' ? '分组详情' : uiState.view === 'tools' ? '工具与备份' : '配置编辑'}</h2>
-                    <p class="api-profile-manager__subtitle">方便保存多个 API 配置、分组整理同地址多模型，并快速切换到你想用的方案。</p>
-                    <div class="api-profile-manager__status-bar ${uiState.statusType === 'error' ? 'is-error' : 'is-success'}">${escapeHtml(uiState.status)}</div>
+                <div class="api-profile-manager__hero-main">
+                    <div class="api-profile-manager__hero-brand" aria-hidden="true">API</div>
+                    <div class="api-profile-manager__hero-copy">
+                        <div class="api-profile-manager__hero-topline">
+                            <p class="api-profile-manager__eyebrow">${escapeHtml(meta.eyebrow)}</p>
+                            <span class="api-profile-manager__pill">${uiState.isLightMode ? '浅色界面' : '深色界面'}</span>
+                        </div>
+                        <h2 class="api-profile-manager__title">${escapeHtml(meta.title)}</h2>
+                        <p class="api-profile-manager__subtitle">${escapeHtml(meta.subtitle)}</p>
+                        <div class="api-profile-manager__hero-summary">
+                            <span class="api-profile-manager__pill api-profile-manager__pill--accent">当前：${escapeHtml(getActiveProfile()?.name || '未启用')}</span>
+                            <span class="api-profile-manager__pill">${buildGroups().length} 个分组</span>
+                            <span class="api-profile-manager__pill">${getProfiles().length} 条配置</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="api-profile-manager__hero-actions">
-                    <span class="api-profile-manager__pill">${escapeHtml(getActiveProfile()?.name || '未启用')}</span>
-                    <button class="api-profile-manager__sheet-close" data-action="close-panel" aria-label="关闭面板">×</button>
+                <div class="api-profile-manager__hero-utilities">
+                    <div class="api-profile-manager__hero-actions">
+                        <button class="api-profile-manager__button" data-action="toggle-theme">${uiState.isLightMode ? '切换深色' : '切换浅色'}</button>
+                        <button class="api-profile-manager__sheet-close" data-action="close-panel" aria-label="关闭面板">×</button>
+                    </div>
+                    <div class="api-profile-manager__status-bar ${uiState.statusType === 'error' ? 'is-error' : 'is-success'}">${escapeHtml(uiState.status)}</div>
                 </div>
             </header>
             <div class="api-profile-manager__content">${renderContent()}</div>
@@ -1103,13 +1340,23 @@ function renderSheet() {
 }
 
 function renderLauncher() {
+    const stats = getHomeStats();
     return `
-        <div class="api-profile-manager__launcher-bar" data-action="open-panel" aria-label="API管家入口" role="button" tabindex="0">
-            <span class="api-profile-manager__launcher-title">API管家</span>
-            <span class="api-profile-manager__launcher-button" aria-hidden="true">
-                <span class="api-profile-manager__fab-icon">API</span>
-                <span>打开</span>
-            </span>
+        <div class="api-profile-manager__launcher-shell">
+            <div class="api-profile-manager__launcher-bar" data-action="open-panel" aria-label="API管家入口" role="button" tabindex="0">
+                <div class="api-profile-manager__launcher-copy">
+                    <span class="api-profile-manager__launcher-kicker">API管家</span>
+                    <span class="api-profile-manager__launcher-title">保存、整理并切换你的接口方案</span>
+                    <span class="api-profile-manager__launcher-meta">${stats.groupCount} 个分组 · ${stats.profileCount} 条配置 · 当前 ${escapeHtml(stats.activeLabel)}</span>
+                </div>
+                <div class="api-profile-manager__launcher-actions">
+                    <span class="api-profile-manager__launcher-stat">${uiState.isLightMode ? '浅色' : '深色'}</span>
+                    <span class="api-profile-manager__launcher-button" aria-hidden="true">
+                        <span class="api-profile-manager__fab-icon">API</span>
+                        <span class="api-profile-manager__launcher-open">打开面板</span>
+                    </span>
+                </div>
+            </div>
         </div>
     `;
 }
@@ -1231,14 +1478,18 @@ function render() {
         return;
     }
 
+    root.classList.toggle('light-theme', uiState.isLightMode);
+    root.closest('.api-profile-manager')?.classList.toggle('light-theme', uiState.isLightMode);
     root.innerHTML = renderLauncher();
     root.classList.remove('is-open');
 
     bindSurfaceEvents(root);
 
     if (managerPopup?.dlg?.isConnected) {
+        managerPopup.dlg.classList.toggle('light-theme', uiState.isLightMode);
         const content = managerPopup.dlg.querySelector('.api-profile-manager__popup-content');
         if (content instanceof HTMLElement) {
+            content.classList.toggle('light-theme', uiState.isLightMode);
             content.innerHTML = renderSheet();
         }
         bindSurfaceEvents(managerPopup.dlg);
@@ -1249,7 +1500,7 @@ async function openManagerPopup() {
     setOpen(true);
 
     const wrapper = document.createElement('div');
-    wrapper.className = 'api-profile-manager api-profile-manager__popup-content';
+    wrapper.className = `api-profile-manager api-profile-manager__popup-content${uiState.isLightMode ? ' light-theme' : ''}`;
     wrapper.innerHTML = renderSheet();
 
     managerPopup = new Popup(wrapper, POPUP_TYPE.TEXT, '', {
@@ -1322,6 +1573,11 @@ async function handleClick(event) {
             break;
         case 'open-tools':
             uiState.view = 'tools';
+            render();
+            break;
+        case 'toggle-theme':
+            syncEditorDraftFromForm();
+            uiState.isLightMode = !uiState.isLightMode;
             render();
             break;
         case 'fetch-models-placeholder':
