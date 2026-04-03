@@ -360,12 +360,12 @@
     --apm-radius-md: 12px !important;
     --apm-radius-lg: 20px !important;
     --apm-shadow-sheet: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.05) inset !important;
-    --apm-bg: rgba(15, 20, 30, 0.75) !important;
-    --apm-surface: rgba(255, 255, 255, 0.03) !important;
-    --apm-surface-strong: rgba(255, 255, 255, 0.06) !important;
-    --apm-surface-soft: rgba(255, 255, 255, 0.02) !important;
-    --apm-border: rgba(255, 255, 255, 0.08) !important;
-    --apm-border-light: rgba(255, 255, 255, 0.12) !important;
+    --apm-bg: rgba(14, 19, 28, 0.93) !important;
+    --apm-surface: rgba(26, 33, 46, 0.76) !important;
+    --apm-surface-strong: rgba(33, 41, 56, 0.88) !important;
+    --apm-surface-soft: rgba(23, 29, 41, 0.68) !important;
+    --apm-border: rgba(255, 255, 255, 0.11) !important;
+    --apm-border-light: rgba(255, 255, 255, 0.18) !important;
     --apm-text-muted: #94a3b8 !important;
     --apm-accent: #38bdf8 !important;
     --apm-danger: #fb7185 !important;
@@ -377,12 +377,12 @@
 .api-profile-manager.light-theme,
 .apm-light-theme.popup,
 .apm-light-theme .api-profile-manager {
-    --apm-bg: rgba(255, 255, 255, 0.92) !important;
-    --apm-surface: rgba(0, 0, 0, 0.03) !important;
-    --apm-surface-strong: rgba(0, 0, 0, 0.06) !important;
-    --apm-surface-soft: rgba(0, 0, 0, 0.02) !important;
-    --apm-border: rgba(0, 0, 0, 0.08) !important;
-    --apm-border-light: rgba(0, 0, 0, 0.15) !important;
+    --apm-bg: rgba(252, 253, 255, 0.96) !important;
+    --apm-surface: rgba(248, 250, 252, 0.88) !important;
+    --apm-surface-strong: rgba(255, 255, 255, 0.94) !important;
+    --apm-surface-soft: rgba(241, 245, 249, 0.82) !important;
+    --apm-border: rgba(100, 116, 139, 0.14) !important;
+    --apm-border-light: rgba(100, 116, 139, 0.2) !important;
     --apm-text: #0f172a !important;
     --apm-text-muted: #64748b !important;
     --apm-accent: #0ea5e9 !important;
@@ -434,8 +434,8 @@
 }
 
 .api-profile-manager__overlay {
-    background: rgba(0, 0, 0, 0.5) !important;
-    backdrop-filter: blur(6px) !important;
+    background: rgba(3, 8, 16, 0.68) !important;
+    backdrop-filter: blur(10px) !important;
 }
 
 .api-profile-manager__sheet {
@@ -443,7 +443,7 @@
     max-height: 85vh !important;
     border: 1px solid var(--apm-border-light) !important;
     background: var(--apm-bg) !important;
-    backdrop-filter: blur(24px) saturate(150%) !important;
+    backdrop-filter: blur(26px) saturate(160%) !important;
     box-shadow: var(--apm-shadow-sheet) !important;
 }
 
@@ -1296,9 +1296,18 @@
 
 .api-profile-manager__group-arrow {
     color: var(--apm-text-muted);
-    font-size: 12px;
     transition: transform var(--apm-transition);
     flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    margin-right: 2px;
+}
+
+.api-profile-manager__group-arrow.is-expanded {
+    transform: rotate(45deg);
 }
 
 .api-profile-manager__group-side,

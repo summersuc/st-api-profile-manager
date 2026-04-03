@@ -1581,7 +1581,7 @@ function renderHomeView() {
                             <div class="api-profile-manager__group-top">
                                 <div class="api-profile-manager__group-main">
                                     <div class="api-profile-manager__group-title-wrap">
-                                        <span class="api-profile-manager__group-arrow" style="transform: ${isExpanded ? 'rotate(90deg)' : 'none'};">▶</span>
+                                        <span class="api-profile-manager__group-arrow ${isExpanded ? 'is-expanded' : ''}" aria-hidden="true"></span>
                                         <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
                                     </div>
                                 </div>
