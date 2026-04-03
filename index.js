@@ -111,6 +111,7 @@ const uiState = {
     isOpen: false,
     view: 'home',
     activeGroupKey: '',
+    expandedModelRows: {},
     editingProfileId: '',
     editorDraft: null,
     fetchedModels: [],
@@ -414,6 +415,7 @@ function setOpen(value) {
         uiState.view = 'home';
         uiState.editingProfileId = '';
         uiState.activeGroupKey = '';
+        uiState.expandedModelRows = {};
         uiState.editorDraft = null;
         uiState.modelPickerQuery = '';
         uiState.isModelPickerOpen = false;
@@ -429,6 +431,7 @@ function goHome() {
     uiState.view = 'home';
     uiState.activeGroupKey = '';
     uiState.editingProfileId = '';
+    uiState.expandedModelRows = {};
     uiState.editorDraft = null;
     uiState.modelPickerQuery = '';
     uiState.isModelPickerOpen = false;
@@ -1416,6 +1419,18 @@ function toggleSelectedModelPanel() {
     render();
 }
 
+function toggleExpandedModelRow(profileId) {
+    if (!profileId) {
+        return;
+    }
+
+    uiState.expandedModelRows = {
+        ...uiState.expandedModelRows,
+        [profileId]: !uiState.expandedModelRows[profileId],
+    };
+    render();
+}
+
 async function deleteGroup(groupKey) {
     const normalizedGroupKey = normalizeText(groupKey);
     const group = buildGroups().find(item => item.key === normalizedGroupKey);
@@ -1560,36 +1575,39 @@ function renderHomeView() {
             <div class="api-profile-manager__group-list">
                 ${groups.map(group => {
                     const isExpanded = uiState.activeGroupKey === group.key;
+                    const hasActiveProfile = group.profiles.some(profile => profile.id === activeProfile?.id);
                     return `
-                        <article class="api-profile-manager__group-card ${isExpanded ? 'is-expanded' : ''}">
-                            <div class="api-profile-manager__group-top" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
+                        <article class="api-profile-manager__group-card api-profile-manager__glass-card ${isExpanded ? 'is-expanded' : ''} ${hasActiveProfile ? 'is-active' : ''}" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
+                            <div class="api-profile-manager__group-top">
                                 <div class="api-profile-manager__group-main">
-                                    <span class="api-profile-manager__group-arrow" style="transform: ${isExpanded ? 'rotate(90deg)' : 'none'};">▶</span>
-                                    <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
+                                    <div class="api-profile-manager__group-title-wrap">
+                                        <span class="api-profile-manager__group-arrow" style="transform: ${isExpanded ? 'rotate(90deg)' : 'none'};">▶</span>
+                                        <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
+                                    </div>
                                 </div>
-                                <div class="api-profile-manager__group-side"></div>
+                                <div class="api-profile-manager__group-side">
+                                    <span class="api-profile-manager__group-state ${hasActiveProfile ? 'is-active' : ''}">${hasActiveProfile ? '已启用' : '未启用'}</span>
+                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
+                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--danger api-profile-manager__button--compact" data-action="delete-group" data-group-key="${escapeHtml(group.key)}">删除分组</button>
+                                </div>
                             </div>
                             ${isExpanded ? `
-                                <div class="api-profile-manager__drawer-list">
-                                    <div class="api-profile-manager__drawer-toolbar">
-                                        <p class="api-profile-manager__drawer-summary">${group.profiles.length} 个模型配置。这里用于快速应用、编辑或删除。</p>
-                                        <div class="api-profile-manager__drawer-toolbar-actions">
-                                            <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">+ 新增模型</button>
-                                            <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--danger api-profile-manager__button--compact" data-action="delete-group" data-group-key="${escapeHtml(group.key)}">删除分组</button>
-                                        </div>
+                                <div class="api-profile-manager__drawer-list api-profile-manager__group-model-list">
+                                    <div class="api-profile-manager__group-model-summary">
+                                        <span class="api-profile-manager__group-model-count">模型列表（${group.profiles.length}）</span>
                                     </div>
                                     ${group.profiles.map(profile => {
                                         const isActive = profile.id === activeProfile?.id;
+                                        const isNameExpanded = Boolean(uiState.expandedModelRows[profile.id]);
                                         return `
                                         <article class="api-profile-manager__drawer-item api-profile-manager__drawer-item--row ${isActive ? 'is-active' : ''}">
                                             <div class="api-profile-manager__drawer-main">
-                                                <h4 class="api-profile-manager__drawer-title">
+                                                <button class="api-profile-manager__drawer-title api-profile-manager__drawer-title-button ${isNameExpanded ? 'is-expanded' : ''}" data-action="toggle-model-row" data-profile-id="${profile.id}" title="${escapeHtml(profile.name || profile.model || '未命名')}">
                                                     ${escapeHtml(profile.name || profile.model || '未命名')}
-                                                </h4>
-                                                <p class="api-profile-manager__drawer-status">${isActive ? '<span class="api-profile-manager__active-dot"></span>已启用' : '未启用'}</p>
+                                                </button>
                                             </div>
                                             <div class="api-profile-manager__drawer-actions">
-                                                <button class="api-profile-manager__profile-action ${isActive ? '' : 'api-profile-manager__profile-action--primary'}" data-action="apply-profile" data-profile-id="${profile.id}">${isActive ? '重新应用' : '应用'}</button>
+                                                <button class="api-profile-manager__profile-action ${isActive ? 'api-profile-manager__profile-action--status' : 'api-profile-manager__profile-action--primary'}" data-action="${isActive ? 'noop' : 'apply-profile'}" data-profile-id="${profile.id}">${isActive ? '已启用' : '应用'}</button>
                                                 <button class="api-profile-manager__profile-action" data-action="edit-profile" data-profile-id="${profile.id}">编辑</button>
                                                 <button class="api-profile-manager__profile-action api-profile-manager__profile-action--danger" data-action="delete-profile" data-profile-id="${profile.id}">删除</button>
                                             </div>
@@ -2059,6 +2077,11 @@ async function handleClick(event) {
         case 'toggle-group':
             uiState.activeGroupKey = uiState.activeGroupKey === groupKey ? '' : groupKey;
             render();
+            break;
+        case 'toggle-model-row':
+            toggleExpandedModelRow(profileId);
+            break;
+        case 'noop':
             break;
         case 'new-profile':
             openEditor('', {});
