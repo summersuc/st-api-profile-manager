@@ -17,9 +17,25 @@ const DEFAULT_SETTINGS = {
     version: 2,
     activeProfileId: '',
     profiles: [],
+    groupMetadata: {},
     preferences: {
         maskKeysByDefault: true,
     },
+};
+
+const ST_PROVIDER_MAP = {
+    custom: { mode: 'chat-completions', provider: 'custom' },
+    openai: { mode: 'chat-completions', provider: 'openai' },
+    azure_openai: { mode: 'chat-completions', provider: 'azure_openai' },
+    generic: { mode: 'text-generation', provider: 'generic' },
+    ooba: { mode: 'text-generation', provider: 'ooba' },
+    vllm: { mode: 'text-generation', provider: 'vllm' },
+    aphrodite: { mode: 'text-generation', provider: 'aphrodite' },
+    tabby: { mode: 'text-generation', provider: 'tabby' },
+    koboldcpp: { mode: 'text-generation', provider: 'koboldcpp' },
+    llamacpp: { mode: 'text-generation', provider: 'llamacpp' },
+    ollama: { mode: 'text-generation', provider: 'ollama' },
+    huggingface: { mode: 'text-generation', provider: 'huggingface' },
 };
 
 const MODE_OPTIONS = [
@@ -119,6 +135,7 @@ const uiState = {
     isModelPickerOpen: false,
     selectedModelQuery: '',
     isSelectedModelPanelOpen: false,
+    pickerPanelScrollTop: 0,
     status: '就绪',
     statusType: 'success',
     revealKey: false,
@@ -192,10 +209,291 @@ function getSettings() {
     settings.version ??= DEFAULT_SETTINGS.version;
     settings.activeProfileId ??= '';
     settings.profiles ??= [];
+    settings.groupMetadata ??= {};
     settings.preferences ??= clone(DEFAULT_SETTINGS.preferences);
     settings.preferences.maskKeysByDefault ??= true;
     settings.profiles = settings.profiles.map(profile => ({ ...defaultProfile(), ...profile, id: profile.id || crypto.randomUUID() }));
     return settings;
+}
+
+function getStContext() {
+    return globalThis.SillyTavern?.getContext?.() ?? null;
+}
+
+async function getConnectionProfilesFromHost() {
+    const context = getStContext();
+    const directProfiles = context?.extensionSettings?.connectionManager?.profiles;
+    if (Array.isArray(directProfiles)) {
+        return directProfiles;
+    }
+
+    const executeSlashCommandsWithOptions = context?.executeSlashCommandsWithOptions;
+    if (typeof executeSlashCommandsWithOptions !== 'function') {
+        return [];
+    }
+
+    const listResult = await executeSlashCommandsWithOptions('/profile-list');
+    const profileNames = JSON.parse(String(listResult?.pipe ?? '[]'));
+    if (!Array.isArray(profileNames) || !profileNames.length) {
+        return [];
+    }
+
+    const details = [];
+    for (const name of profileNames) {
+        const result = await executeSlashCommandsWithOptions(`/profile-get ${JSON.stringify(String(name))}`);
+        const parsed = JSON.parse(String(result?.pipe ?? '{}'));
+        if (parsed && typeof parsed === 'object') {
+            details.push(parsed);
+        }
+    }
+    return details;
+}
+
+function parseStConnectionProfileContext(rawProfile) {
+    const source = normalizeText(rawProfile?.api || rawProfile?.source || rawProfile?.api_source || rawProfile?.api_type || rawProfile?.type);
+    const mode = rawProfile?.mode === 'tc' ? 'text-generation' : 'chat-completions';
+    const mapped = ST_PROVIDER_MAP[source] ?? { mode, provider: mode === 'text-generation' ? 'generic' : 'custom' };
+    return {
+        name: normalizeText(rawProfile?.name) || '未命名连接配置',
+        source,
+        mode,
+        mapped,
+    };
+}
+
+function mapStConnectionProfileToPluginProfileFromLiveValues(rawProfile, liveValues) {
+    const { name, mapped } = parseStConnectionProfileContext(rawProfile);
+    const model = normalizeText(liveValues.model || rawProfile?.model);
+    const baseUrl = normalizeText(liveValues.baseUrl);
+    const apiKey = String(liveValues.apiKey ?? '');
+
+    if (!baseUrl && !apiKey && !model) {
+        return null;
+    }
+
+    const timestamp = new Date().toISOString();
+    return {
+        ...defaultProfile(),
+        id: crypto.randomUUID(),
+        groupName: name,
+        mode: mapped.mode,
+        provider: mapped.provider,
+        name: model || name,
+        model,
+        selectedModels: model ? [model] : [],
+        baseUrl,
+        apiKey,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        notes: '从 SillyTavern Connection Profiles 导入',
+    };
+}
+
+function getHostControlsForProfile(rawProfile) {
+    const { mapped } = parseStConnectionProfileContext(rawProfile);
+    const config = getProviderConfig({ mode: mapped.mode, provider: mapped.provider });
+    return {
+        mapped,
+        config,
+        keySelector: config?.secretKey ? `#${config.secretKey}` : '',
+    };
+}
+
+function readLiveHostValuesForProfile(rawProfile) {
+    const { config, keySelector } = getHostControlsForProfile(rawProfile);
+    return {
+        baseUrl: config?.urlSelector ? readControlValue(config.urlSelector) || '' : '',
+        apiKey: keySelector ? readControlValue(keySelector) || '' : '',
+        model: config?.modelSelector ? readControlValue(asSelectorList(config.modelSelector)[0]) || '' : '',
+    };
+}
+
+function buildImportedProfiles(profilesWithValues) {
+    return profilesWithValues
+        .map(({ rawProfile, liveValues }) => mapStConnectionProfileToPluginProfileFromLiveValues(rawProfile, liveValues))
+        .filter(Boolean);
+}
+
+async function switchToConnectionProfile(profileName) {
+    const context = getStContext();
+    const executeSlashCommandsWithOptions = context?.executeSlashCommandsWithOptions;
+    if (typeof executeSlashCommandsWithOptions !== 'function') {
+        throw new Error('当前 SillyTavern 环境不支持程序化切换 Connection Profile');
+    }
+
+    await executeSlashCommandsWithOptions(`/profile ${JSON.stringify(String(profileName))}`);
+    await sleep(320);
+}
+
+async function getCurrentConnectionProfileName() {
+    const context = getStContext();
+    const executeSlashCommandsWithOptions = context?.executeSlashCommandsWithOptions;
+    if (typeof executeSlashCommandsWithOptions !== 'function') {
+        return '';
+    }
+
+    const result = await executeSlashCommandsWithOptions('/profile');
+    return normalizeText(result?.pipe);
+}
+
+function resetPanelTransientState() {
+    uiState.fetchedModels = [];
+    uiState.modelPickerQuery = '';
+    uiState.isModelPickerOpen = false;
+    uiState.selectedModelQuery = '';
+    uiState.isSelectedModelPanelOpen = false;
+    uiState.pickerPanelScrollTop = 0;
+}
+
+async function collectImportedProfilesFromHostProfiles(hostProfiles) {
+    const originalProfileName = await getCurrentConnectionProfileName();
+    const collectedValues = [];
+
+    try {
+        for (const rawProfile of hostProfiles) {
+            const profileName = normalizeText(rawProfile?.name);
+            if (!profileName) {
+                continue;
+            }
+
+            await switchToConnectionProfile(profileName);
+            collectedValues.push({
+                rawProfile,
+                liveValues: readLiveHostValuesForProfile(rawProfile),
+            });
+        }
+    } finally {
+        if (originalProfileName) {
+            try {
+                await switchToConnectionProfile(originalProfileName);
+            } catch (error) {
+                console.warn(`${MODULE_NAME}: failed to restore original connection profile`, error);
+            }
+        }
+    }
+
+    return buildImportedProfiles(collectedValues);
+}
+
+async function importStConnectionProfiles() {
+    try {
+        setStatus('正在读取 SillyTavern Connection Profiles…');
+        const hostProfiles = await getConnectionProfilesFromHost();
+        if (!hostProfiles.length) {
+            setStatus('没有读取到 SillyTavern Connection Profiles', 'error');
+            return;
+        }
+
+        setStatus('正在逐个读取连接配置的 URL / 密钥 / 模型…');
+        const importedProfiles = await collectImportedProfilesFromHostProfiles(hostProfiles);
+        if (!importedProfiles.length) {
+            setStatus('读取到了 Connection Profiles，但没有可导入的 URL / 密钥 / 模型配置', 'error');
+            return;
+        }
+
+        for (const profile of importedProfiles) {
+            upsertProfile(profile);
+        }
+
+        ensureGroupMetadata();
+        persist();
+        goHome();
+        const missingKeyCount = importedProfiles.filter(profile => !normalizeText(profile.apiKey)).length;
+        setStatus(missingKeyCount
+            ? `已导入 ${importedProfiles.length} 条连接配置，其中 ${missingKeyCount} 条需要手动补充 API Key`
+            : `已从 SillyTavern 导入 ${importedProfiles.length} 条连接配置`);
+    } catch (error) {
+        console.error(`${MODULE_NAME}: import ST connection profiles failed`, error);
+        const message = error instanceof Error ? error.message : '导入 ST 连接配置失败';
+        setStatus(`导入失败：${message}`, 'error');
+    }
+}
+
+function getGroupMetadata(groupKey) {
+    const settings = getSettings();
+    settings.groupMetadata ??= {};
+    settings.groupMetadata[groupKey] ??= { pinned: false, order: Number.MAX_SAFE_INTEGER };
+    return settings.groupMetadata[groupKey];
+}
+
+function ensureGroupMetadata() {
+    const settings = getSettings();
+    const groups = Array.from(new Set(getProfiles().map(profile => getGroupKey(profile))));
+    let nextOrder = 0;
+    for (const groupKey of groups) {
+        const metadata = getGroupMetadata(groupKey);
+        if (!Number.isFinite(metadata.order) || metadata.order === Number.MAX_SAFE_INTEGER) {
+            metadata.order = nextOrder;
+        }
+        nextOrder = Math.max(nextOrder, metadata.order + 1);
+    }
+
+    for (const existingKey of Object.keys(settings.groupMetadata)) {
+        if (!groups.includes(existingKey)) {
+            delete settings.groupMetadata[existingKey];
+        }
+    }
+}
+
+function moveGroup(groupKey, direction) {
+    ensureGroupMetadata();
+    const groups = buildGroups();
+    const currentIndex = groups.findIndex(group => group.key === groupKey);
+    if (currentIndex === -1) {
+        return;
+    }
+
+    const targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= groups.length) {
+        return;
+    }
+
+    const settings = getSettings();
+    const currentMetadata = getGroupMetadata(groups[currentIndex].key);
+    const targetMetadata = getGroupMetadata(groups[targetIndex].key);
+    const currentOrder = currentMetadata.order;
+    currentMetadata.order = targetMetadata.order;
+    targetMetadata.order = currentOrder;
+    settings.groupMetadata[groups[currentIndex].key] = currentMetadata;
+    settings.groupMetadata[groups[targetIndex].key] = targetMetadata;
+    persist();
+    render();
+}
+
+function toggleGroupPinned(groupKey) {
+    const metadata = getGroupMetadata(groupKey);
+    metadata.pinned = !metadata.pinned;
+    persist();
+    render();
+}
+
+async function renameGroup(groupKey) {
+    const group = findGroup(groupKey);
+    if (!group) {
+        setStatus('没有找到要修改的分组', 'error');
+        return;
+    }
+
+    const nextName = await callGenericPopup('请输入新的分组名称', POPUP_TYPE.INPUT, group.title);
+    const normalizedName = normalizeText(nextName);
+    if (!normalizedName || normalizedName === group.title) {
+        return;
+    }
+
+    const settings = getSettings();
+    settings.profiles = settings.profiles.map(profile => getGroupKey(profile) === group.key
+        ? { ...profile, groupName: normalizedName, updatedAt: new Date().toISOString() }
+        : profile);
+
+    if (settings.groupMetadata?.[group.key]) {
+        const metadata = settings.groupMetadata[group.key];
+        delete settings.groupMetadata[group.key];
+        settings.groupMetadata[getGroupKey({ groupName: normalizedName, baseUrl: group.baseUrl })] = metadata;
+    }
+
+    persist();
+    render();
+    setStatus(`已将分组改名为「${normalizedName}」`);
 }
 
 function persist() {
@@ -235,6 +533,7 @@ function getGroupTitle(profile) {
 }
 
 function buildGroups() {
+    ensureGroupMetadata();
     const groups = new Map();
 
     for (const profile of getProfiles()) {
@@ -253,9 +552,21 @@ function buildGroups() {
     return Array.from(groups.values())
         .map(group => ({
             ...group,
+            metadata: getGroupMetadata(group.key),
             profiles: group.profiles.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
         }))
-        .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+        .sort((a, b) => {
+            if (Boolean(a.metadata?.pinned) !== Boolean(b.metadata?.pinned)) {
+                return a.metadata?.pinned ? -1 : 1;
+            }
+
+            const orderDiff = (a.metadata?.order ?? Number.MAX_SAFE_INTEGER) - (b.metadata?.order ?? Number.MAX_SAFE_INTEGER);
+            if (orderDiff !== 0) {
+                return orderDiff;
+            }
+
+            return a.title.localeCompare(b.title, 'zh-CN');
+        });
 }
 
 function getActiveProfile() {
@@ -266,8 +577,16 @@ function getCurrentGroup() {
     return buildGroups().find(group => group.key === uiState.activeGroupKey) ?? null;
 }
 
+function findGroup(groupKey) {
+    return buildGroups().find(group => group.key === normalizeText(groupKey)) ?? null;
+}
+
 function getSuggestedModels(profile) {
     const currentProfile = profile ?? getEditingProfile() ?? defaultProfile();
+    if (!normalizeText(currentProfile.baseUrl)) {
+        return Array.from(new Set([...(currentProfile.selectedModels ?? []), normalizeText(currentProfile.model)].map(normalizeText).filter(Boolean)));
+    }
+
     const fetchedModels = uiState.fetchedModels.map(normalizeText).filter(Boolean);
     const existingModels = getProfiles()
         .filter(item => normalizeText(item.baseUrl) === normalizeText(currentProfile.baseUrl)
@@ -330,6 +649,7 @@ async function fetchModelsForEditor() {
     const profile = readEditorProfile();
     if (!normalizeText(profile.baseUrl)) {
         uiState.editorDraft = profile;
+        uiState.fetchedModels = [];
         setStatus('请先填写 API URL', 'error');
         return;
     }
@@ -337,16 +657,9 @@ async function fetchModelsForEditor() {
     const providerConfig = getProviderConfig(profile);
     if (!providerConfig) {
         uiState.editorDraft = profile;
+        uiState.fetchedModels = [];
         setStatus('当前数据来源暂未接入一键拉取模型，请先手动填写模型 ID', 'error');
         return;
-    }
-
-    if (providerConfig.secretKey) {
-        try {
-            await writeSecret(providerConfig.secretKey, profile.apiKey, profile.name || profile.provider, { allowEmpty: true });
-        } catch (error) {
-            console.warn(`${MODULE_NAME}: prefetch writeSecret failed`, error);
-        }
     }
 
     const { url, payload } = getFetchModelsPayload(profile);
@@ -357,6 +670,7 @@ async function fetchModelsForEditor() {
         const models = normalizeFetchedModels(responseData);
 
         if (!models.length) {
+            uiState.fetchedModels = [];
             setStatus('没有获取到模型列表，请检查当前来源、密钥和接口地址', 'error');
             return;
         }
@@ -371,6 +685,7 @@ async function fetchModelsForEditor() {
         setStatus(`已拉取 ${models.length} 个模型`);
         render();
     } catch (error) {
+        uiState.fetchedModels = [];
         console.error(`${MODULE_NAME}: fetch models failed`, error);
         const message = error instanceof Error ? error.message : '拉取模型失败';
         const friendlyMessage = /Forbidden/i.test(message)
@@ -417,10 +732,7 @@ function setOpen(value) {
         uiState.activeGroupKey = '';
         uiState.expandedModelRows = {};
         uiState.editorDraft = null;
-        uiState.modelPickerQuery = '';
-        uiState.isModelPickerOpen = false;
-        uiState.selectedModelQuery = '';
-        uiState.isSelectedModelPanelOpen = false;
+        resetPanelTransientState();
         uiState.revealKey = false;
     }
     render();
@@ -433,10 +745,7 @@ function goHome() {
     uiState.editingProfileId = '';
     uiState.expandedModelRows = {};
     uiState.editorDraft = null;
-    uiState.modelPickerQuery = '';
-    uiState.isModelPickerOpen = false;
-    uiState.selectedModelQuery = '';
-    uiState.isSelectedModelPanelOpen = false;
+    resetPanelTransientState();
     uiState.revealKey = !getSettings().preferences.maskKeysByDefault;
     render();
 }
@@ -453,10 +762,7 @@ function openEditor(profileId = '', preset = {}) {
     uiState.editingProfileId = next.id;
     uiState.editorDraft = next;
     uiState.view = 'editor';
-    uiState.modelPickerQuery = '';
-    uiState.isModelPickerOpen = false;
-    uiState.selectedModelQuery = '';
-    uiState.isSelectedModelPanelOpen = false;
+    resetPanelTransientState();
     uiState.revealKey = !getSettings().preferences.maskKeysByDefault;
 
     render();
@@ -692,6 +998,179 @@ async function verifyModelApplied(selector, model) {
     }, { timeout: 2400, interval: 80 });
 }
 
+function getApplyTarget(profile, config) {
+    return {
+        mainApiValue: profile.mode === 'text-generation' ? 'textgenerationwebui' : 'openai',
+        stageOneSelector: config.sourceSelector || config.typeSelector || '',
+        stageOneValue: config.sourceValue || config.typeValue || '',
+    };
+}
+
+function logApplyContext(logPrefix, profile, config, applyTarget) {
+    console.groupCollapsed(`${logPrefix} start ${profile.name || profile.model || profile.id}`);
+    console.log(`${logPrefix} profile`, {
+        id: profile.id,
+        name: profile.name,
+        mode: profile.mode,
+        provider: profile.provider,
+        model: profile.model,
+        baseUrl: profile.baseUrl,
+    });
+    console.log(`${logPrefix} config`, {
+        mainApiValue: applyTarget.mainApiValue,
+        stageOneSelector: applyTarget.stageOneSelector,
+        stageOneValue: applyTarget.stageOneValue,
+        urlSelector: config.urlSelector ?? null,
+        modelSelector: asSelectorList(config.modelSelector),
+        secretSelector: config.secretKey ? `#${config.secretKey}` : null,
+        connectButton: config.connectButton ?? null,
+    });
+}
+
+function abortApply(logPrefix, detail) {
+    console.warn(`${logPrefix} abort: ${detail}`);
+    console.groupEnd();
+}
+
+async function applyMainApi(logPrefix, applyTarget) {
+    const mainApiApplied = await setSelectValue('#main_api', applyTarget.mainApiValue);
+    console.log(`${logPrefix} main api`, {
+        applied: mainApiApplied,
+        currentValue: readControlValue('#main_api'),
+    });
+    return mainApiApplied;
+}
+
+async function applyStageOne(logPrefix, applyTarget) {
+    const stageOneReady = applyTarget.stageOneSelector
+        ? await waitForSelectControl(applyTarget.stageOneSelector, { timeout: 2400, interval: 80 })
+        : false;
+    console.log(`${logPrefix} stage-one ready`, {
+        ready: stageOneReady,
+        selector: applyTarget.stageOneSelector,
+        control: describeControl(applyTarget.stageOneSelector),
+    });
+
+    if (!stageOneReady) {
+        return { ready: false, applied: false, stable: false };
+    }
+
+    await sleep(120);
+    const sourceApplied = applyTarget.stageOneSelector && applyTarget.stageOneValue
+        ? await setSelectValue(applyTarget.stageOneSelector, applyTarget.stageOneValue)
+        : false;
+    console.log(`${logPrefix} stage-one apply`, {
+        applied: sourceApplied,
+        selector: applyTarget.stageOneSelector,
+        expectedValue: applyTarget.stageOneValue,
+        currentValue: readControlValue(applyTarget.stageOneSelector),
+    });
+
+    if (!sourceApplied) {
+        return { ready: true, applied: false, stable: false };
+    }
+
+    const stageOneStable = await waitForCondition(() => readControlValue(applyTarget.stageOneSelector) === String(applyTarget.stageOneValue), {
+        timeout: 2400,
+        interval: 80,
+    });
+    console.log(`${logPrefix} stage-one stable`, {
+        stable: stageOneStable,
+        selector: applyTarget.stageOneSelector,
+        currentValue: readControlValue(applyTarget.stageOneSelector),
+    });
+
+    return { ready: true, applied: true, stable: stageOneStable };
+}
+
+async function waitForApplyControls(config, logPrefix) {
+    await sleep(220);
+    const controlsToWaitFor = [
+        config.urlSelector,
+        config.modelSelector,
+        config.secretKey ? `#${config.secretKey}` : '',
+    ].filter(Boolean);
+
+    const readiness = await Promise.all(controlsToWaitFor.map(selector => waitForAnyControl(selector, { timeout: 2400, interval: 80 })));
+    console.log(`${logPrefix} dependent controls`, controlsToWaitFor.map((selector, index) => ({
+        target: selector,
+        ready: readiness[index],
+        control: describeControl(selector),
+    })));
+
+    return readiness.every(Boolean);
+}
+
+async function writeApplyFields(profile, config, logPrefix) {
+    const urlApplied = config.urlSelector ? await setInputValue([config.urlSelector], profile.baseUrl) : true;
+    const visibleKeyApplied = config.secretKey ? await setInputValue([`#${config.secretKey}`], profile.apiKey) : true;
+    let modelApplied = config.modelSelector ? await applyModelToControl(config.modelSelector, profile.model) : true;
+    console.log(`${logPrefix} field writes`, {
+        urlApplied,
+        urlControl: config.urlSelector ? describeControl(config.urlSelector) : null,
+        keyApplied: visibleKeyApplied,
+        keyControl: config.secretKey ? describeControl([`#${config.secretKey}`]) : null,
+        modelApplied,
+        modelControl: config.modelSelector ? describeControl(config.modelSelector) : null,
+    });
+
+    let secretApplied = false;
+    if (config.secretKey) {
+        try {
+            await writeSecret(config.secretKey, profile.apiKey, profile.name || profile.provider, { allowEmpty: true });
+            secretApplied = true;
+        } catch (error) {
+            console.warn(`${MODULE_NAME}: writeSecret failed`, error);
+        }
+    }
+
+    const connectTriggered = config.connectButton ? clickElement(config.connectButton) : false;
+    console.log(`${logPrefix} connect`, {
+        triggered: connectTriggered,
+        button: config.connectButton ?? null,
+    });
+
+    if (!modelApplied && config.modelSelector && connectTriggered) {
+        await sleep(300);
+        modelApplied = await applyModelToControl(config.modelSelector, profile.model);
+        console.log(`${logPrefix} model retry after connect`, {
+            modelApplied,
+            modelControl: describeControl(config.modelSelector),
+        });
+    }
+
+    if (modelApplied && config.modelSelector) {
+        modelApplied = await verifyModelApplied(config.modelSelector, profile.model);
+        console.log(`${logPrefix} model verify`, {
+            modelApplied,
+            modelControl: describeControl(config.modelSelector),
+        });
+    }
+
+    return { urlApplied, visibleKeyApplied, secretApplied, modelApplied, connectTriggered };
+}
+
+function finalizeApply(profile, result) {
+    const settings = getSettings();
+    settings.activeProfileId = profile.id;
+    persist();
+
+    const parts = [
+        result.mainApiApplied ? '连接方式' : null,
+        result.sourceApplied ? '来源' : null,
+        result.urlApplied ? '地址' : null,
+        result.secretApplied || result.visibleKeyApplied ? '密钥' : null,
+        result.modelApplied ? '模型' : null,
+        result.connectTriggered ? '连接' : null,
+    ].filter(Boolean);
+    const detail = parts.length ? `（已写入：${parts.join('、')}）` : '';
+    setStatus(`已启用「${profile.name}」${detail}`);
+    if (typeof toastr !== 'undefined' && typeof toastr.success === 'function') {
+        toastr.success(`已启用「${profile.name}」`, 'API 管家');
+    }
+    render();
+}
+
 function validateProfile(profile) {
     if (!profile.mode || !PROVIDER_OPTIONS[profile.mode]) {
         return '请选择连接方式';
@@ -901,196 +1380,67 @@ async function applyProfile(profileId) {
         return;
     }
 
-    const mainApiValue = profile.mode === 'text-generation' ? 'textgenerationwebui' : 'openai';
-    const stageOneSelector = config.sourceSelector || config.typeSelector || '';
-    const stageOneValue = config.sourceValue || config.typeValue || '';
     const logPrefix = '[APM][apply]';
+    const applyTarget = getApplyTarget(profile, config);
+    logApplyContext(logPrefix, profile, config, applyTarget);
 
-    console.groupCollapsed(`${logPrefix} start ${profile.name || profile.model || profile.id}`);
-    console.log(`${logPrefix} profile`, {
-        id: profile.id,
-        name: profile.name,
-        mode: profile.mode,
-        provider: profile.provider,
-        model: profile.model,
-        baseUrl: profile.baseUrl,
-    });
-    console.log(`${logPrefix} config`, {
-        mainApiValue,
-        stageOneSelector,
-        stageOneValue,
-        urlSelector: config.urlSelector ?? null,
-        modelSelector: asSelectorList(config.modelSelector),
-        secretSelector: config.secretKey ? `#${config.secretKey}` : null,
-        connectButton: config.connectButton ?? null,
-    });
-
-    const mainApiApplied = await setSelectValue('#main_api', mainApiValue);
-    console.log(`${logPrefix} main api`, {
-        applied: mainApiApplied,
-        currentValue: readControlValue('#main_api'),
-    });
+    const mainApiApplied = await applyMainApi(logPrefix, applyTarget);
     if (!mainApiApplied) {
-        console.warn(`${logPrefix} abort: main api switch failed`);
-        console.groupEnd();
+        abortApply(logPrefix, 'main api switch failed');
         setStatus('应用未完成：无法切换 SillyTavern 当前 API 连接方式', 'error');
         return;
     }
 
-    const stageOneReady = stageOneSelector
-        ? await waitForSelectControl(stageOneSelector, { timeout: 2400, interval: 80 })
-        : false;
-    console.log(`${logPrefix} stage-one ready`, {
-        ready: stageOneReady,
-        selector: stageOneSelector,
-        control: describeControl(stageOneSelector),
-    });
-
-    if (!stageOneReady) {
-        console.warn(`${logPrefix} abort: stage-one control not ready`);
-        console.groupEnd();
+    const stageOneResult = await applyStageOne(logPrefix, applyTarget);
+    if (!stageOneResult.ready) {
+        abortApply(logPrefix, 'stage-one control not ready');
         setStatus('应用未完成：切换连接方式后，SillyTavern 的来源 / 类型控件还没有准备好', 'error');
         return;
     }
 
-    await sleep(120);
-
-    const sourceApplied = stageOneSelector && stageOneValue
-        ? await setSelectValue(stageOneSelector, stageOneValue)
-        : false;
-    console.log(`${logPrefix} stage-one apply`, {
-        applied: sourceApplied,
-        selector: stageOneSelector,
-        expectedValue: stageOneValue,
-        currentValue: readControlValue(stageOneSelector),
-    });
-
-    if (!sourceApplied) {
-        console.warn(`${logPrefix} abort: stage-one apply failed`);
-        console.groupEnd();
+    if (!stageOneResult.applied) {
+        abortApply(logPrefix, 'stage-one apply failed');
         setStatus('应用未完成：无法切换 SillyTavern 当前来源 / 类型', 'error');
         return;
     }
 
-    const stageOneStable = await waitForCondition(() => readControlValue(stageOneSelector) === String(stageOneValue), {
-        timeout: 2400,
-        interval: 80,
-    });
-    console.log(`${logPrefix} stage-one stable`, {
-        stable: stageOneStable,
-        selector: stageOneSelector,
-        currentValue: readControlValue(stageOneSelector),
-    });
-
-    if (!stageOneStable) {
-        console.warn(`${logPrefix} abort: stage-one not stable`);
-        console.groupEnd();
+    if (!stageOneResult.stable) {
+        abortApply(logPrefix, 'stage-one not stable');
         setStatus('应用未完成：SillyTavern 当前来源 / 类型还没有稳定切换完成', 'error');
         return;
     }
 
-    await sleep(220);
-
-    const controlsToWaitFor = [
-        config.urlSelector,
-        config.modelSelector,
-        config.secretKey ? `#${config.secretKey}` : '',
-    ].filter(Boolean);
-
-    const controlReadiness = await Promise.all(controlsToWaitFor.map(selector => waitForAnyControl(selector, { timeout: 2400, interval: 80 })));
-    const allControlsReady = controlReadiness.every(Boolean);
-    console.log(`${logPrefix} dependent controls`, controlsToWaitFor.map((selector, index) => ({
-        target: selector,
-        ready: controlReadiness[index],
-        control: describeControl(selector),
-    })));
-
+    const allControlsReady = await waitForApplyControls(config, logPrefix);
     if (!allControlsReady) {
-        console.warn(`${logPrefix} abort: dependent controls not ready`);
-        console.groupEnd();
+        abortApply(logPrefix, 'dependent controls not ready');
         setStatus('应用未完成：切换来源后，SillyTavern 的目标控件还没有准备好', 'error');
         return;
     }
 
-    const urlApplied = config.urlSelector ? await setInputValue([config.urlSelector], profile.baseUrl) : true;
-    const visibleKeyApplied = config.secretKey ? await setInputValue([`#${config.secretKey}`], profile.apiKey) : true;
-    let modelApplied = config.modelSelector ? await applyModelToControl(config.modelSelector, profile.model) : true;
-    console.log(`${logPrefix} field writes`, {
-        urlApplied,
-        urlControl: config.urlSelector ? describeControl(config.urlSelector) : null,
-        keyApplied: visibleKeyApplied,
-        keyControl: config.secretKey ? describeControl([`#${config.secretKey}`]) : null,
-        modelApplied,
-        modelControl: config.modelSelector ? describeControl(config.modelSelector) : null,
-    });
-    let secretApplied = false;
-
-    if (config.secretKey) {
-        try {
-            await writeSecret(config.secretKey, profile.apiKey, profile.name || profile.provider, { allowEmpty: true });
-            secretApplied = true;
-        } catch (error) {
-            console.warn(`${MODULE_NAME}: writeSecret failed`, error);
-        }
-    }
-
-    const connectTriggered = config.connectButton ? clickElement(config.connectButton) : false;
-    console.log(`${logPrefix} connect`, {
-        triggered: connectTriggered,
-        button: config.connectButton ?? null,
-    });
-
-    if (!modelApplied && config.modelSelector && connectTriggered) {
-        await sleep(300);
-        modelApplied = await applyModelToControl(config.modelSelector, profile.model);
-        console.log(`${logPrefix} model retry after connect`, {
-            modelApplied,
-            modelControl: describeControl(config.modelSelector),
-        });
-    }
-
-    if (modelApplied && config.modelSelector) {
-        modelApplied = await verifyModelApplied(config.modelSelector, profile.model);
-        console.log(`${logPrefix} model verify`, {
-            modelApplied,
-            modelControl: describeControl(config.modelSelector),
-        });
-    }
-
+    const fieldResult = await writeApplyFields(profile, config, logPrefix);
     const requiredApplied = mainApiApplied
-        && sourceApplied
-        && urlApplied
-        && modelApplied;
+        && stageOneResult.applied
+        && fieldResult.urlApplied
+        && fieldResult.modelApplied;
     console.log(`${logPrefix} final`, {
         requiredApplied,
         mainApiApplied,
-        sourceApplied,
-        urlApplied,
-        keyApplied: visibleKeyApplied || secretApplied,
-        modelApplied,
+        sourceApplied: stageOneResult.applied,
+        urlApplied: fieldResult.urlApplied,
+        keyApplied: fieldResult.visibleKeyApplied || fieldResult.secretApplied,
+        modelApplied: fieldResult.modelApplied,
         activeProfileWillUpdate: requiredApplied,
     });
 
     if (requiredApplied) {
-        const settings = getSettings();
-        settings.activeProfileId = profile.id;
-        persist();
-
-        const parts = [
-            mainApiApplied ? '连接方式' : null,
-            sourceApplied ? '来源' : null,
-            urlApplied ? '地址' : null,
-            secretApplied || visibleKeyApplied ? '密钥' : null,
-            modelApplied ? '模型' : null,
-            connectTriggered ? '连接' : null,
-        ].filter(Boolean);
-        const detail = parts.length ? `（已写入：${parts.join('、')}）` : '';
-        setStatus(`已启用「${profile.name}」${detail}`);
-        render();
+        finalizeApply(profile, {
+            mainApiApplied,
+            sourceApplied: stageOneResult.applied,
+            ...fieldResult,
+        });
         console.groupEnd();
     } else {
-        console.warn(`${logPrefix} abort: required fields not fully applied`);
-        console.groupEnd();
+        abortApply(logPrefix, 'required fields not fully applied');
         setStatus('应用未完成：当前 SillyTavern 页面没有成功写入关键字段（连接方式 / 来源 / 地址 / 模型）', 'error');
     }
 }
@@ -1292,6 +1642,9 @@ function toggleEditorSelectedModel(modelName) {
     }
 
     profile.selectedModels = Array.from(selectedModels);
+    const pickerPanel = managerPopup?.dlg?.querySelector('.api-profile-manager__model-option-list--panel')
+        || dom.root?.querySelector?.('.api-profile-manager__model-option-list--panel');
+    uiState.pickerPanelScrollTop = pickerPanel instanceof HTMLElement ? pickerPanel.scrollTop : uiState.pickerPanelScrollTop;
     setEditorDraftProfile(profile);
     render();
 }
@@ -1433,7 +1786,7 @@ function toggleExpandedModelRow(profileId) {
 
 async function deleteGroup(groupKey) {
     const normalizedGroupKey = normalizeText(groupKey);
-    const group = buildGroups().find(item => item.key === normalizedGroupKey);
+    const group = findGroup(normalizedGroupKey);
     if (!group) {
         setStatus('没有找到要删除的分组', 'error');
         return;
@@ -1447,6 +1800,7 @@ async function deleteGroup(groupKey) {
     const profileIds = new Set(group.profiles.map(profile => profile.id));
     const settings = getSettings();
     settings.profiles = settings.profiles.filter(profile => !profileIds.has(profile.id));
+    delete settings.groupMetadata?.[normalizedGroupKey];
     if (profileIds.has(settings.activeProfileId)) {
         settings.activeProfileId = settings.profiles[0]?.id ?? '';
     }
@@ -1510,16 +1864,17 @@ function renderSuggestedModelPicker(profile, suggestedModels) {
     const selectedModels = new Set(getUniqueSelectedModels(profile));
     const filteredModels = getFilteredSuggestedModels(profile);
     const allFilteredSelected = filteredModels.length > 0 && filteredModels.every(modelName => selectedModels.has(modelName));
+    const canShowFetchedSummary = Boolean(normalizeText(profile.baseUrl)) && suggestedModels.length > 0;
     return `
         <div class="api-profile-manager__model-picker">
             <div class="api-profile-manager__picker-toolbar">
-                <p class="api-profile-manager__picker-note">已拉取 / 识别到 ${suggestedModels.length} 个模型。打开选择框后可搜索、多选和全选，再从上面的已选标签里设置主模型。</p>
+                <p class="api-profile-manager__picker-note">${canShowFetchedSummary ? `已拉取 / 识别到 ${suggestedModels.length} 个模型。打开选择框后可搜索、多选和全选，再从上面的已选标签里设置主模型。` : '请先填写 API URL 并点击“获取列表”，再从这里搜索和多选模型。'}</p>
                 <div class="api-profile-manager__picker-toolbar-actions">
                     <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" type="button" data-action="toggle-model-picker">${uiState.isModelPickerOpen ? '收起选择框' : '打开选择框'}</button>
                     ${selectedModels.size ? '<button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" type="button" data-action="clear-selected-models">清空已选</button>' : ''}
                 </div>
             </div>
-            ${suggestedModels.length ? `
+            ${canShowFetchedSummary ? `
                 <div class="api-profile-manager__model-picker-shell ${uiState.isModelPickerOpen ? 'is-open' : ''}">
                     ${uiState.isModelPickerOpen ? `
                         <div class="api-profile-manager__model-picker-controls">
@@ -1576,17 +1931,24 @@ function renderHomeView() {
                 ${groups.map(group => {
                     const isExpanded = uiState.activeGroupKey === group.key;
                     const hasActiveProfile = group.profiles.some(profile => profile.id === activeProfile?.id);
+                    const isPinned = Boolean(group.metadata?.pinned);
+                    const hasMissingKey = group.profiles.some(profile => !normalizeText(profile.apiKey));
                     return `
-                        <article class="api-profile-manager__group-card api-profile-manager__glass-card ${isExpanded ? 'is-expanded' : ''} ${hasActiveProfile ? 'is-active' : ''}" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
-                            <div class="api-profile-manager__group-top">
+                        <article class="api-profile-manager__group-card api-profile-manager__glass-card ${isExpanded ? 'is-expanded' : ''} ${hasActiveProfile ? 'is-active' : ''}" data-group-key="${escapeHtml(group.key)}">
+                            <div class="api-profile-manager__group-top" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
                                 <div class="api-profile-manager__group-main">
                                     <div class="api-profile-manager__group-title-wrap">
                                         <span class="api-profile-manager__group-arrow ${isExpanded ? 'is-expanded' : ''}" aria-hidden="true"></span>
                                         <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
                                     </div>
+                                    ${hasMissingKey ? '<span class="api-profile-manager__group-state api-profile-manager__group-state--warning">缺少密钥</span>' : ''}
                                 </div>
                                 <div class="api-profile-manager__group-side">
                                     <span class="api-profile-manager__group-state ${hasActiveProfile ? 'is-active' : ''}">${hasActiveProfile ? '已启用' : '未启用'}</span>
+                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="rename-group" data-group-key="${escapeHtml(group.key)}">修改分组</button>
+                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="toggle-group-pinned" data-group-key="${escapeHtml(group.key)}">${isPinned ? '取消置顶' : '置顶'}</button>
+                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="move-group-up" data-group-key="${escapeHtml(group.key)}">上移</button>
+                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="move-group-down" data-group-key="${escapeHtml(group.key)}">下移</button>
                                     <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
                                     <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--danger api-profile-manager__button--compact" data-action="delete-group" data-group-key="${escapeHtml(group.key)}">删除分组</button>
                                 </div>
@@ -1605,6 +1967,7 @@ function renderHomeView() {
                                                 <button class="api-profile-manager__drawer-title api-profile-manager__drawer-title-button ${isNameExpanded ? 'is-expanded' : ''}" data-action="toggle-model-row" data-profile-id="${profile.id}" title="${escapeHtml(profile.name || profile.model || '未命名')}">
                                                     ${escapeHtml(profile.name || profile.model || '未命名')}
                                                 </button>
+                                                ${!normalizeText(profile.apiKey) ? '<p class="api-profile-manager__drawer-status api-profile-manager__drawer-status--warning">缺少密钥</p>' : ''}
                                             </div>
                                             <div class="api-profile-manager__drawer-actions">
                                                 <button class="api-profile-manager__profile-action ${isActive ? 'api-profile-manager__profile-action--status' : 'api-profile-manager__profile-action--primary'}" data-action="${isActive ? 'noop' : 'apply-profile'}" data-profile-id="${profile.id}">${isActive ? '已启用' : '应用'}</button>
@@ -1682,10 +2045,14 @@ function renderEditorView() {
     const profile = getEditingProfile() ?? defaultProfile();
     const suggestedModels = getSuggestedModels(profile);
     const selectedModels = getUniqueSelectedModels(profile);
+    const isMissingKey = !normalizeText(profile.apiKey);
     return `
         <section class="api-profile-manager__editor">
             <div class="api-profile-manager__section-head">
-                <h3 class="api-profile-manager__section-title">参数设置</h3>
+                <div>
+                    <h3 class="api-profile-manager__section-title">参数设置</h3>
+                    ${isMissingKey ? '<p class="api-profile-manager__section-subtitle api-profile-manager__section-subtitle--warning">当前配置缺少 API Key，保存后仍需补充才能正常启用。</p>' : ''}
+                </div>
                 <button class="api-profile-manager__button api-profile-manager__button--ghost" data-action="back-from-editor" style="padding: 0;">‹ 返回</button>
             </div>
 
@@ -1776,6 +2143,7 @@ function renderToolsView() {
                 <p class="api-profile-manager__tools-note">支持导入、明文导出和加密导出。加密导出只保护备份文件，不会把 SillyTavern 当前存储变成真正保险箱。</p>
                 <div class="api-profile-manager__tool-actions">
                     <button class="api-profile-manager__button" data-action="import">导入备份</button>
+                    <button class="api-profile-manager__button" data-action="import-st-connection-profiles">导入 ST 连接配置</button>
                     <button class="api-profile-manager__button" data-action="export-plain">导出 JSON</button>
                     <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="export-encrypted">加密导出</button>
                 </div>
@@ -1916,6 +2284,7 @@ function bindSurfaceEvents(surface) {
     });
     surface.addEventListener('change', handleChange);
     surface.addEventListener('input', handleInput);
+    surface.addEventListener('scroll', handleScroll, true);
     surface.dataset.apmBound = 'true';
 }
 
@@ -1952,6 +2321,8 @@ function render() {
 
     const existingPopupContent = managerPopup?.dlg?.querySelector('.api-profile-manager__content');
     const previousPopupScrollTop = existingPopupContent instanceof HTMLElement ? existingPopupContent.scrollTop : null;
+    const existingPickerPanel = managerPopup?.dlg?.querySelector('.api-profile-manager__model-option-list--panel');
+    const previousPickerPanelScrollTop = existingPickerPanel instanceof HTMLElement ? existingPickerPanel.scrollTop : uiState.pickerPanelScrollTop;
 
     root.classList.toggle('light-theme', uiState.isLightMode);
     root.classList.toggle('apm-light-theme', uiState.isLightMode);
@@ -1975,6 +2346,11 @@ function render() {
                 if (nextPopupContent instanceof HTMLElement) {
                     nextPopupContent.scrollTop = previousPopupScrollTop;
                 }
+            }
+            const nextPickerPanel = managerPopup.dlg.querySelector('.api-profile-manager__model-option-list--panel');
+            if (nextPickerPanel instanceof HTMLElement) {
+                nextPickerPanel.scrollTop = previousPickerPanelScrollTop;
+                uiState.pickerPanelScrollTop = previousPickerPanelScrollTop;
             }
         }
         bindSurfaceEvents(managerPopup.dlg);
@@ -2045,6 +2421,10 @@ async function handleClick(event) {
     const profileId = button.dataset.profileId || '';
     const groupKey = button.dataset.groupKey || '';
 
+    if (await handleGroupAction(action, groupKey, event)) {
+        return;
+    }
+
     switch (action) {
         case 'open-panel':
             await openManagerPopup();
@@ -2071,13 +2451,6 @@ async function handleClick(event) {
         case 'back-home':
             goHome();
             break;
-        case 'open-group':
-            openGroup(groupKey);
-            break;
-        case 'toggle-group':
-            uiState.activeGroupKey = uiState.activeGroupKey === groupKey ? '' : groupKey;
-            render();
-            break;
         case 'toggle-model-row':
             toggleExpandedModelRow(profileId);
             break;
@@ -2086,20 +2459,6 @@ async function handleClick(event) {
         case 'new-profile':
             openEditor('', {});
             break;
-        case 'delete-group':
-            await deleteGroup(groupKey);
-            break;
-        case 'new-profile-in-group': {
-            const group = buildGroups().find(item => item.key === groupKey);
-            openEditor('', {
-                groupName: group?.profiles[0]?.groupName || group?.title || '',
-                baseUrl: group?.baseUrl || '',
-                mode: group?.profiles[0]?.mode || 'chat-completions',
-                provider: group?.profiles[0]?.provider || 'custom',
-                headerName: group?.profiles[0]?.headerName || 'Authorization',
-            });
-            break;
-        }
         case 'edit-profile':
             openEditor(profileId);
             break;
@@ -2156,6 +2515,9 @@ async function handleClick(event) {
             break;
         case 'import':
             dom.importFile.click();
+            break;
+        case 'import-st-connection-profiles':
+            await importStConnectionProfiles();
             break;
         case 'export-plain':
             await exportPlain();
@@ -2220,6 +2582,61 @@ function handleInput(event) {
             return;
         }
         uiState.editorDraft = readEditorProfile();
+    }
+}
+
+function handleScroll(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+
+    if (target.classList.contains('api-profile-manager__model-option-list--panel')) {
+        uiState.pickerPanelScrollTop = target.scrollTop;
+    }
+}
+
+async function handleGroupAction(action, groupKey, event) {
+    switch (action) {
+        case 'open-group':
+            openGroup(groupKey);
+            return true;
+        case 'toggle-group':
+            uiState.activeGroupKey = uiState.activeGroupKey === groupKey ? '' : groupKey;
+            render();
+            return true;
+        case 'toggle-group-pinned':
+            event.stopPropagation();
+            toggleGroupPinned(groupKey);
+            return true;
+        case 'rename-group':
+            event.stopPropagation();
+            await renameGroup(groupKey);
+            return true;
+        case 'move-group-up':
+            event.stopPropagation();
+            moveGroup(groupKey, -1);
+            return true;
+        case 'move-group-down':
+            event.stopPropagation();
+            moveGroup(groupKey, 1);
+            return true;
+        case 'delete-group':
+            await deleteGroup(groupKey);
+            return true;
+        case 'new-profile-in-group': {
+            const group = findGroup(groupKey);
+            openEditor('', {
+                groupName: group?.profiles[0]?.groupName || group?.title || '',
+                baseUrl: group?.baseUrl || '',
+                mode: group?.profiles[0]?.mode || 'chat-completions',
+                provider: group?.profiles[0]?.provider || 'custom',
+                headerName: group?.profiles[0]?.headerName || 'Authorization',
+            });
+            return true;
+        }
+        default:
+            return false;
     }
 }
 
