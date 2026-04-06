@@ -1,12 +1,12 @@
 {
-  "display_name": "API 管家",
+  "display_name": "API Profile Manager",
   "loading_order": 20,
   "requires": [],
   "optional": [],
   "js": "index.js",
   "css": "style.css",
   "author": "OpenCode",
-  "version": "2.0.0",
+  "version": "0.1.1",
   "homePage": "https://github.com/summersuc/st-api-profile-manager",
   "auto_update": true,
   "minimum_client_version": "1.12.13"
