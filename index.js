@@ -27,6 +27,27 @@ const ST_PROVIDER_MAP = {
     custom: { mode: 'chat-completions', provider: 'custom' },
     openai: { mode: 'chat-completions', provider: 'openai' },
     azure_openai: { mode: 'chat-completions', provider: 'azure_openai' },
+    claude: { mode: 'chat-completions', provider: 'claude' },
+    openrouter: { mode: 'chat-completions', provider: 'openrouter' },
+    mistralai: { mode: 'chat-completions', provider: 'mistralai' },
+    makersuite: { mode: 'chat-completions', provider: 'makersuite' },
+    vertexai: { mode: 'chat-completions', provider: 'vertexai' },
+    groq: { mode: 'chat-completions', provider: 'groq' },
+    cohere: { mode: 'chat-completions', provider: 'cohere' },
+    perplexity: { mode: 'chat-completions', provider: 'perplexity' },
+    ai21: { mode: 'chat-completions', provider: 'ai21' },
+    deepseek: { mode: 'chat-completions', provider: 'deepseek' },
+    xai: { mode: 'chat-completions', provider: 'xai' },
+    moonshot: { mode: 'chat-completions', provider: 'moonshot' },
+    siliconflow: { mode: 'chat-completions', provider: 'siliconflow' },
+    fireworks: { mode: 'chat-completions', provider: 'fireworks' },
+    pollinations: { mode: 'chat-completions', provider: 'pollinations' },
+    electronhub: { mode: 'chat-completions', provider: 'electronhub' },
+    cometapi: { mode: 'chat-completions', provider: 'cometapi' },
+    zai: { mode: 'chat-completions', provider: 'zai' },
+    chutes: { mode: 'chat-completions', provider: 'chutes' },
+    nanogpt: { mode: 'chat-completions', provider: 'nanogpt' },
+    aimlapi: { mode: 'chat-completions', provider: 'aimlapi' },
     generic: { mode: 'text-generation', provider: 'generic' },
     ooba: { mode: 'text-generation', provider: 'ooba' },
     vllm: { mode: 'text-generation', provider: 'vllm' },
@@ -96,6 +117,7 @@ const CHAT_PROVIDER_CONFIG = {
         secretKey: 'api_key_openai',
         sourceSelector: '#chat_completion_source',
         sourceValue: 'openai',
+        urlSelector: '#openai_reverse_proxy',
         modelSelector: '#model_openai_select',
         connectButton: '#api_button_openai',
     },
@@ -105,6 +127,159 @@ const CHAT_PROVIDER_CONFIG = {
         sourceValue: 'azure_openai',
         urlSelector: '#azure_base_url',
         modelSelector: '#model_azure_openai_select',
+        connectButton: '#api_button_openai',
+    },
+    claude: {
+        secretKey: 'api_key_claude',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'claude',
+        urlSelector: '#claude_reverse_proxy',
+        modelSelector: '#model_claude_select',
+        connectButton: '#api_button_openai',
+    },
+    openrouter: {
+        secretKey: 'api_key_openrouter',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'openrouter',
+        urlSelector: '#openrouter_reverse_proxy',
+        modelSelector: '#model_openrouter_select',
+        connectButton: '#api_button_openai',
+    },
+    mistralai: {
+        secretKey: 'api_key_mistralai',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'mistralai',
+        urlSelector: '#mistral_reverse_proxy',
+        modelSelector: '#model_mistralai_select',
+        connectButton: '#api_button_openai',
+    },
+    makersuite: {
+        secretKey: 'api_key_makersuite',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'makersuite',
+        modelSelector: '#model_google_select',
+        connectButton: '#api_button_openai',
+    },
+    vertexai: {
+        secretKey: 'api_key_vertexai',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'vertexai',
+        modelSelector: '#model_vertexai_select',
+        connectButton: '#api_button_openai',
+    },
+    groq: {
+        secretKey: 'api_key_groq',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'groq',
+        modelSelector: '#model_groq_select',
+        connectButton: '#api_button_openai',
+    },
+    cohere: {
+        secretKey: 'api_key_cohere',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'cohere',
+        modelSelector: '#model_cohere_select',
+        connectButton: '#api_button_openai',
+    },
+    perplexity: {
+        secretKey: 'api_key_perplexity',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'perplexity',
+        modelSelector: '#model_perplexity_select',
+        connectButton: '#api_button_openai',
+    },
+    ai21: {
+        secretKey: 'api_key_ai21',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'ai21',
+        modelSelector: '#model_ai21_select',
+        connectButton: '#api_button_openai',
+    },
+    deepseek: {
+        secretKey: 'api_key_deepseek',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'deepseek',
+        modelSelector: '#model_deepseek_select',
+        connectButton: '#api_button_openai',
+    },
+    xai: {
+        secretKey: 'api_key_xai',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'xai',
+        modelSelector: '#model_xai_select',
+        connectButton: '#api_button_openai',
+    },
+    moonshot: {
+        secretKey: 'api_key_moonshot',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'moonshot',
+        modelSelector: '#model_moonshot_select',
+        connectButton: '#api_button_openai',
+    },
+    siliconflow: {
+        secretKey: 'api_key_siliconflow',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'siliconflow',
+        modelSelector: '#model_siliconflow_select',
+        connectButton: '#api_button_openai',
+    },
+    fireworks: {
+        secretKey: 'api_key_fireworks',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'fireworks',
+        modelSelector: '#model_fireworks_select',
+        connectButton: '#api_button_openai',
+    },
+    pollinations: {
+        secretKey: 'api_key_pollinations',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'pollinations',
+        modelSelector: '#model_pollinations_select',
+        connectButton: '#api_button_openai',
+    },
+    electronhub: {
+        secretKey: 'api_key_electronhub',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'electronhub',
+        urlSelector: '#electronhub_reverse_proxy',
+        modelSelector: '#model_electronhub_select',
+        connectButton: '#api_button_openai',
+    },
+    cometapi: {
+        secretKey: 'api_key_cometapi',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'cometapi',
+        urlSelector: '#cometapi_reverse_proxy',
+        modelSelector: '#model_cometapi_select',
+        connectButton: '#api_button_openai',
+    },
+    zai: {
+        secretKey: 'api_key_zai',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'zai',
+        modelSelector: '#model_zai_select',
+        connectButton: '#api_button_openai',
+    },
+    chutes: {
+        secretKey: 'api_key_chutes',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'chutes',
+        modelSelector: '#model_chutes_select',
+        connectButton: '#api_button_openai',
+    },
+    nanogpt: {
+        secretKey: 'api_key_nanogpt',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'nanogpt',
+        modelSelector: '#model_nanogpt_select',
+        connectButton: '#api_button_openai',
+    },
+    aimlapi: {
+        secretKey: 'api_key_aimlapi',
+        sourceSelector: '#chat_completion_source',
+        sourceValue: 'aimlapi',
+        urlSelector: '#aimlapi_reverse_proxy',
+        modelSelector: '#model_aimlapi_select',
         connectButton: '#api_button_openai',
     },
 };
@@ -267,7 +442,7 @@ function mapStConnectionProfileToPluginProfileFromLiveValues(rawProfile, liveVal
     const baseUrl = normalizeText(liveValues.baseUrl);
     const apiKey = String(liveValues.apiKey ?? '');
 
-    if (!baseUrl && !apiKey && !model) {
+    if (!model && !baseUrl && !apiKey) {
         return null;
     }
 
@@ -494,6 +669,42 @@ async function renameGroup(groupKey) {
     persist();
     render();
     setStatus(`已将分组改名为「${normalizedName}」`);
+}
+
+function readCurrentStApiState() {
+    const mainApi = readControlValue('#main_api');
+    if (!mainApi) return null;
+    const mode = mainApi === 'textgenerationwebui' ? 'text-generation' : 'chat-completions';
+    const provider = mode === 'text-generation'
+        ? (readControlValue('#textgen_type') || '')
+        : (readControlValue('#chat_completion_source') || '');
+    return { mode, provider };
+}
+
+function isActiveProfileStillCurrent() {
+    const activeProfile = getActiveProfile();
+    if (!activeProfile) return false;
+    const state = readCurrentStApiState();
+    if (!state || !state.provider) return true;
+    return activeProfile.mode === state.mode && activeProfile.provider === state.provider;
+}
+
+function dismissRegexReloadToasts() {
+    try {
+        document.querySelectorAll('.toast-container .toast, #toast-container .toast').forEach(el => {
+            const text = el.textContent || '';
+            if (text.includes('正则') || text.toLowerCase().includes('regex')) {
+                const closeBtn = el.querySelector('.toast-close-button, [data-dismiss]');
+                if (closeBtn instanceof HTMLElement) {
+                    closeBtn.click();
+                } else {
+                    el.remove();
+                }
+            }
+        });
+    } catch (error) {
+        console.warn(`${MODULE_NAME}: dismissRegexReloadToasts failed`, error);
+    }
 }
 
 function persist() {
@@ -1168,8 +1379,17 @@ function finalizeApply(profile, result) {
     if (typeof toastr !== 'undefined' && typeof toastr.success === 'function') {
         toastr.success(`已启用「${profile.name}」`, 'API 管家');
     }
+    setTimeout(dismissRegexReloadToasts, 600);
+    setTimeout(dismissRegexReloadToasts, 1400);
     render();
 }
+
+const NATIVE_PROVIDERS = new Set([
+    'openai', 'claude', 'openrouter', 'makersuite', 'vertexai', 'mistralai',
+    'cohere', 'perplexity', 'groq', 'ai21', 'deepseek', 'xai', 'pollinations',
+    'moonshot', 'fireworks', 'siliconflow', 'cometapi', 'zai', 'electronhub',
+    'chutes', 'nanogpt', 'aimlapi', 'huggingface',
+]);
 
 function validateProfile(profile) {
     if (!profile.mode || !PROVIDER_OPTIONS[profile.mode]) {
@@ -1189,17 +1409,22 @@ function validateProfile(profile) {
         return '请填写至少一个模型名称';
     }
 
-    if (!normalizeText(profile.baseUrl)) {
+    const baseUrl = normalizeText(profile.baseUrl);
+    const isNativeProvider = NATIVE_PROVIDERS.has(profile.provider);
+
+    if (!baseUrl && !isNativeProvider) {
         return '请填写接口地址';
     }
 
-    try {
-        const url = new URL(profile.baseUrl);
-        if (!['http:', 'https:'].includes(url.protocol)) {
-            return '接口地址必须以 http 或 https 开头';
+    if (baseUrl) {
+        try {
+            const url = new URL(baseUrl);
+            if (!['http:', 'https:'].includes(url.protocol)) {
+                return '接口地址必须以 http 或 https 开头';
+            }
+        } catch {
+            return '接口地址格式不正确';
         }
-    } catch {
-        return '接口地址格式不正确';
     }
 
     return '';
@@ -1918,6 +2143,7 @@ function renderHomeView() {
     }
 
     const activeProfile = getActiveProfile();
+    const activeIsStillCurrent = isActiveProfileStillCurrent();
     return `
         <section class="api-profile-manager__home">
             <div class="api-profile-manager__section-head">
@@ -1930,9 +2156,9 @@ function renderHomeView() {
             <div class="api-profile-manager__group-list">
                 ${groups.map(group => {
                     const isExpanded = uiState.activeGroupKey === group.key;
-                    const hasActiveProfile = group.profiles.some(profile => profile.id === activeProfile?.id);
+                    const hasActiveProfile = activeIsStillCurrent && group.profiles.some(profile => profile.id === activeProfile?.id);
                     const isPinned = Boolean(group.metadata?.pinned);
-                    const hasMissingKey = group.profiles.some(profile => !normalizeText(profile.apiKey));
+                    const hasMissingKey = group.profiles.some(profile => !normalizeText(profile.apiKey) && !NATIVE_PROVIDERS.has(profile.provider));
                     return `
                         <article class="api-profile-manager__group-card api-profile-manager__glass-card ${isExpanded ? 'is-expanded' : ''} ${hasActiveProfile ? 'is-active' : ''}" data-group-key="${escapeHtml(group.key)}">
                             <div class="api-profile-manager__group-top" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
@@ -1959,15 +2185,16 @@ function renderHomeView() {
                                         <span class="api-profile-manager__group-model-count">模型列表（${group.profiles.length}）</span>
                                     </div>
                                     ${group.profiles.map(profile => {
-                                        const isActive = profile.id === activeProfile?.id;
+                                        const isActive = activeIsStillCurrent && profile.id === activeProfile?.id;
                                         const isNameExpanded = Boolean(uiState.expandedModelRows[profile.id]);
+                                        const missingKey = !normalizeText(profile.apiKey) && !NATIVE_PROVIDERS.has(profile.provider);
                                         return `
                                         <article class="api-profile-manager__drawer-item api-profile-manager__drawer-item--row ${isActive ? 'is-active' : ''}">
                                             <div class="api-profile-manager__drawer-main">
                                                 <button class="api-profile-manager__drawer-title api-profile-manager__drawer-title-button ${isNameExpanded ? 'is-expanded' : ''}" data-action="toggle-model-row" data-profile-id="${profile.id}" title="${escapeHtml(profile.name || profile.model || '未命名')}">
                                                     ${escapeHtml(profile.name || profile.model || '未命名')}
                                                 </button>
-                                                ${!normalizeText(profile.apiKey) ? '<p class="api-profile-manager__drawer-status api-profile-manager__drawer-status--warning">缺少密钥</p>' : ''}
+                                                ${missingKey ? '<p class="api-profile-manager__drawer-status api-profile-manager__drawer-status--warning">缺少密钥</p>' : ''}
                                             </div>
                                             <div class="api-profile-manager__drawer-actions">
                                                 <button class="api-profile-manager__profile-action ${isActive ? 'api-profile-manager__profile-action--status' : 'api-profile-manager__profile-action--primary'}" data-action="${isActive ? 'noop' : 'apply-profile'}" data-profile-id="${profile.id}">${isActive ? '已启用' : '应用'}</button>
@@ -2190,11 +2417,20 @@ function renderSheet() {
 }
 
 function renderLauncher() {
+    const activeProfile = getActiveProfile();
+    const stillCurrent = isActiveProfileStillCurrent();
+    const showActive = activeProfile && stillCurrent;
     return `
         <div class="api-profile-manager__launcher-bar" data-action="open-panel" aria-label="API管家入口" role="button" tabindex="0">
-            <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
                 <span class="api-profile-manager__fab-icon">⚡</span>
-                <span class="api-profile-manager__launcher-title">API 管家</span>
+                <div style="min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                    <span class="api-profile-manager__launcher-title">API 管家</span>
+                    ${showActive
+                        ? `<span class="api-profile-manager__launcher-active-hint"><span class="api-profile-manager__active-dot" style="width:5px;height:5px;vertical-align:middle;margin-right:4px;"></span>${escapeHtml(activeProfile.model || activeProfile.name || '已启用')}</span>`
+                        : `<span class="api-profile-manager__launcher-active-hint" style="color:var(--apm-text-muted);">点击管理接口配置</span>`
+                    }
+                </div>
             </div>
             <span class="api-profile-manager__launcher-arrow">›</span>
         </div>
@@ -2663,4 +2899,9 @@ jQuery(async () => {
 
     getSettings();
     render();
+
+    // Listen for ST API source changes to keep active status in sync
+    jQuery(document).on('change', '#main_api, #chat_completion_source, #textgen_type', () => {
+        render();
+    });
 });
