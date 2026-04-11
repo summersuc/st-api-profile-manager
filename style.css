@@ -1,122 +1,72 @@
+/* =========================================
+   API管家 设计系统 v2.0
+   - 继承 SillyTavern SmartTheme 变量
+   - 语义化命名，减少到 ~20 个变量
+   - 支持暗色/亮色主题自动适应
+   ========================================= */
+
 .api-profile-manager {
-    --apm-space-1: 4px;
-    --apm-space-2: 8px;
-    --apm-space-3: 12px;
-    --apm-space-4: 16px;
-    --apm-space-5: 20px;
-    --apm-space-6: 24px;
-    --apm-space-7: 32px;
-    --apm-radius-sm: 12px;
-    --apm-radius-md: 18px;
-    --apm-radius-lg: 24px;
-    --apm-radius-pill: 999px;
-    --apm-shadow-sheet: 0 24px 60px rgba(0, 0, 0, 0.34);
-    --apm-shadow-card: 0 14px 32px rgba(5, 10, 20, 0.2);
+    /* === 间距系统 === */
+    --apm-space-xs: 4px;
+    --apm-space-sm: 8px;
+    --apm-space-md: 12px;
+    --apm-space-lg: 16px;
+    --apm-space-xl: 24px;
+    --apm-space-2xl: 32px;
+
+    /* === 圆角系统 === */
+    --apm-radius-sm: 8px;
+    --apm-radius-md: 12px;
+    --apm-radius-lg: 16px;
+    --apm-radius-full: 999px;
+
+    /* === 阴影系统 === */
+    --apm-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.12);
+    --apm-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.18);
+    --apm-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.24);
+    --apm-shadow-sheet: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+
+    /* === 颜色系统 - 暗色主题 (默认) === */
+    /* 背景色 - 继承 ST 主题色，支持 fallback */
+    --apm-bg: var(--SmartThemeBlurTintColor, rgba(15, 19, 24, 0.96));
+    --apm-surface: var(--SmartThemeBodyColor, rgba(26, 33, 46, 0.9));
+    --apm-surface-hover: rgba(40, 50, 70, 0.9);
+    --apm-surface-active: rgba(50, 60, 80, 0.95);
+
+    /* 边框 */
+    --apm-border: var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.1));
+    --apm-border-light: rgba(255, 255, 255, 0.18);
+
+    /* 文字 */
+    --apm-text: var(--SmartThemeEmColor, #f1f5f9);
+    --apm-text-muted: var(--SmartThemeQuoteColor, #94a3b8);
+
+    /* 强调色 */
+    --apm-accent: var(--SmartThemeUnderlineColor, #38bdf8);
+    --apm-accent-hover: #7dd3fc;
+
+    /* 状态色 */
+    --apm-danger: #f87171;
+    --apm-danger-bg: rgba(248, 113, 113, 0.15);
+    --apm-success: #34d399;
+    --apm-success-bg: rgba(52, 211, 153, 0.15);
+    --apm-warning: #fbbf24;
+    --apm-warning-bg: rgba(251, 191, 36, 0.15);
+
+    /* 过渡动画 */
     --apm-transition: 180ms ease;
-    --apm-bg: color-mix(in srgb, var(--SmartThemeBlurTintColor, rgba(17, 18, 28, 0.95)) 92%, #07111f 8%);
-    --apm-surface: color-mix(in srgb, var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.08)) 18%, rgba(10, 15, 24, 0.92));
-    --apm-surface-strong: color-mix(in srgb, var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.12)) 26%, rgba(9, 16, 28, 0.98));
-    --apm-surface-soft: color-mix(in srgb, var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.08)) 16%, rgba(255, 255, 255, 0.03));
-    --apm-border: color-mix(in srgb, var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.14)) 70%, rgba(255, 255, 255, 0.1));
-    --apm-text: var(--SmartThemeEmColor, #f5f7ff);
-    --apm-text-muted: color-mix(in srgb, var(--SmartThemeQuoteColor, rgba(255, 255, 255, 0.62)) 75%, rgba(227, 232, 255, 0.64));
-    --apm-accent: color-mix(in srgb, var(--SmartThemeUnderlineColor, #63d9ff) 78%, #58f0c2 22%);
-    --apm-accent-strong: color-mix(in srgb, var(--SmartThemeUnderlineColor, #63d9ff) 60%, #ffde8b 40%);
-    --apm-danger: color-mix(in srgb, var(--error, #ff6b6b) 88%, #ff9478 12%);
-    --apm-success: color-mix(in srgb, var(--ok, #74d99f) 84%, #bcf5ce 16%);
-    --apm-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.16);
-    --apm-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --apm-transition-fast: 120ms ease;
+    --apm-transition-slow: 280ms ease;
+
     position: relative;
     z-index: 0;
 }
 
 /* =========================================
-   Light theme readability hotfix
+   API管家 主题说明
+   - 插件会自动继承 SillyTavern 的主题变量
+   - 如需自定义暗色/亮色，请通过 SillyTavern 主题设置
    ========================================= */
-
-.api-profile-manager.light-theme,
-.api-profile-manager.apm-light-theme {
-    --apm-shadow-sheet: 0 20px 40px rgba(15, 23, 42, 0.08) !important;
-    --apm-shadow-card: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
-    --apm-shadow-soft: 0 6px 18px rgba(15, 23, 42, 0.05) !important;
-    --apm-bg: #ffffff !important;
-    --apm-surface: #f8fafc !important;
-    --apm-surface-strong: #ffffff !important;
-    --apm-surface-soft: #f1f5f9 !important;
-    --apm-border: rgba(148, 163, 184, 0.22) !important;
-    --apm-text: #0f172a !important;
-    --apm-text-muted: #475569 !important;
-    --apm-accent: #0284c7 !important;
-    --apm-accent-strong: #0369a1 !important;
-    --apm-danger: #dc2626 !important;
-    --apm-success: #059669 !important;
-    --apm-shadow-inset: none !important;
-}
-
-.api-profile-manager.light-theme,
-.api-profile-manager.apm-light-theme,
-.api-profile-manager.light-theme *,
-.api-profile-manager.apm-light-theme * {
-    text-shadow: none !important;
-    filter: none !important;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
-
-.api-profile-manager.light-theme .api-profile-manager__overlay,
-.api-profile-manager.apm-light-theme .api-profile-manager__overlay {
-    background: rgba(15, 23, 42, 0.18) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
-
-.api-profile-manager.light-theme .api-profile-manager__sheet,
-.api-profile-manager.apm-light-theme .api-profile-manager__sheet {
-    background: #ffffff !important;
-    background-image: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12) !important;
-}
-
-.api-profile-manager.light-theme .api-profile-manager__hero,
-.api-profile-manager.apm-light-theme .api-profile-manager__hero,
-.api-profile-manager.light-theme .api-profile-manager__launcher-bar,
-.api-profile-manager.apm-light-theme .api-profile-manager__launcher-bar,
-.api-profile-manager.light-theme .api-profile-manager__group-card,
-.api-profile-manager.apm-light-theme .api-profile-manager__group-card,
-.api-profile-manager.light-theme .api-profile-manager__drawer-item,
-.api-profile-manager.apm-light-theme .api-profile-manager__drawer-item,
-.api-profile-manager.light-theme .api-profile-manager__profile-card,
-.api-profile-manager.apm-light-theme .api-profile-manager__profile-card,
-.api-profile-manager.light-theme .api-profile-manager__tools-card,
-.api-profile-manager.apm-light-theme .api-profile-manager__tools-card,
-.api-profile-manager.light-theme .api-profile-manager__editor-block,
-.api-profile-manager.apm-light-theme .api-profile-manager__editor-block {
-    background: #ffffff !important;
-    background-image: none !important;
-    border-color: rgba(148, 163, 184, 0.22) !important;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
-
-.api-profile-manager.light-theme .api-profile-manager__launcher-bar::after,
-.api-profile-manager.apm-light-theme .api-profile-manager__launcher-bar::after {
-    content: none !important;
-}
-
-.api-profile-manager.light-theme .api-profile-manager__input,
-.api-profile-manager.apm-light-theme .api-profile-manager__input,
-.api-profile-manager.light-theme .api-profile-manager__select,
-.api-profile-manager.apm-light-theme .api-profile-manager__select {
-    background: #ffffff !important;
-    color: #0f172a !important;
-    border: 1px solid rgba(148, 163, 184, 0.25) !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
 
 @keyframes pulse-glow {
     0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
@@ -124,14 +74,6 @@
     100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 
-.api-profile-manager__active-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--apm-success);
-    display: inline-block;
-    margin-right: 8px;
-    animation: pulse-glow 2s infinite;
 }
 
 .api-profile-manager__editor-block {
@@ -140,11 +82,6 @@
     border-radius: var(--apm-radius-md);
     padding: 20px;
     margin-bottom: 20px;
-}
-
-.apm-light-theme .api-profile-manager__editor-block,
-.light-theme .api-profile-manager__editor-block {
-    background: #f8fafc;
 }
 
 .api-profile-manager__label {
@@ -156,14 +93,6 @@
 .api-profile-manager__select {
     background: rgba(0,0,0,0.3);
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.apm-light-theme .api-profile-manager__input,
-.apm-light-theme .api-profile-manager__select,
-.light-theme .api-profile-manager__input,
-.light-theme .api-profile-manager__select {
-    background: #ffffff;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
 }
 
 @media (max-width: 720px) {
@@ -189,103 +118,522 @@
 }
 
 /* =========================================
-   API管家 高级 UI/UX 覆盖样式（最终生效层）
+   API管家 Launcher + 快捷切换 v2.0
    ========================================= */
 
-.api-profile-manager {
-    --apm-radius-md: 12px !important;
-    --apm-radius-lg: 20px !important;
-    --apm-shadow-sheet: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.05) inset !important;
-    --apm-bg: rgba(14, 19, 28, 0.93) !important;
-    --apm-surface: rgba(26, 33, 46, 0.76) !important;
-    --apm-surface-strong: rgba(33, 41, 56, 0.88) !important;
-    --apm-surface-soft: rgba(23, 29, 41, 0.68) !important;
-    --apm-border: rgba(255, 255, 255, 0.11) !important;
-    --apm-border-light: rgba(255, 255, 255, 0.18) !important;
-    --apm-text-muted: #94a3b8 !important;
-    --apm-accent: #38bdf8 !important;
-    --apm-danger: #fb7185 !important;
-    --apm-success: #10b981 !important;
-    transition: all 0.3s ease;
+/* Launcher 包装器 */
+.api-profile-manager__launcher-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
 }
 
-.api-profile-manager.apm-light-theme,
-.api-profile-manager.light-theme,
-.apm-light-theme.popup,
-.apm-light-theme .api-profile-manager {
-    --apm-bg: rgba(252, 253, 255, 0.96) !important;
-    --apm-surface: rgba(248, 250, 252, 0.88) !important;
-    --apm-surface-strong: rgba(255, 255, 255, 0.94) !important;
-    --apm-surface-soft: rgba(241, 245, 249, 0.82) !important;
-    --apm-border: rgba(100, 116, 139, 0.14) !important;
-    --apm-border-light: rgba(100, 116, 139, 0.2) !important;
-    --apm-text: #0f172a !important;
-    --apm-text-muted: #64748b !important;
-    --apm-accent: #0ea5e9 !important;
-    --apm-shadow-sheet: 0 24px 60px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.05) inset !important;
-}
-
+/* 顶栏按钮 */
 .api-profile-manager__launcher-bar {
-    padding: 12px 18px !important;
-    background: var(--apm-surface) !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    border: 1px solid var(--apm-border) !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--apm-space-sm) var(--apm-space-md);
+    background: var(--apm-surface);
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-md);
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
-    overflow: visible !important;
-}
-
-.api-profile-manager__launcher-bar::after {
-    content: none !important;
+    transition: var(--apm-transition);
 }
 
 .api-profile-manager__launcher-bar:hover {
-    background: var(--apm-surface-strong) !important;
-    border-color: var(--apm-border-light) !important;
-    transform: translateY(-1px);
+    background: var(--apm-surface-hover);
+    border-color: var(--apm-border-light);
 }
 
-.api-profile-manager__launcher-button,
-.api-profile-manager__launcher-kicker,
-.api-profile-manager__launcher-meta,
-.api-profile-manager__launcher-stat,
-.api-profile-manager__launcher-open,
-.api-profile-manager__launcher-actions,
-.api-profile-manager__launcher-copy,
-.api-profile-manager__launcher-shell {
-    display: none !important;
+.api-profile-manager__launcher-bar:active {
+    background: var(--apm-surface-active);
+}
+
+/* 品牌区域 */
+.api-profile-manager__launcher-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-sm);
+}
+
+.api-profile-manager__launcher-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.api-profile-manager__launcher-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--apm-text);
+}
+
+/* 操作按钮区域 */
+.api-profile-manager__launcher-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-xs);
+}
+
+.api-profile-manager__icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-sm);
+    color: var(--apm-text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--apm-transition-fast);
+}
+
+.api-profile-manager__icon-btn:hover {
+    background: var(--apm-surface-hover);
+    color: var(--apm-text);
+    border-color: var(--apm-border-light);
 }
 
 .api-profile-manager__launcher-arrow {
-    display: inline-block !important;
-    color: var(--apm-text-muted) !important;
-    font-size: 20px !important;
-    transition: transform 0.2s;
+    color: var(--apm-text-muted);
+    font-size: 18px;
+    transition: var(--apm-transition-fast);
 }
 
 .api-profile-manager__launcher-bar:hover .api-profile-manager__launcher-arrow {
     transform: translateX(2px);
-    color: var(--apm-text) !important;
 }
 
-.api-profile-manager__launcher-title {
-    font-size: 13px !important;
-    font-weight: 700 !important;
-    color: var(--apm-text) !important;
-    line-height: 1.2 !important;
+/* 快捷切换行 */
+.api-profile-manager__quick-switch {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-md);
+    padding: var(--apm-space-sm) var(--apm-space-md);
+    background: var(--apm-bg);
+    border: 1px solid var(--apm-border);
+    border-top: none;
+    border-radius: 0 0 var(--apm-radius-md) var(--apm-radius-md);
 }
 
-.api-profile-manager__launcher-active-hint {
-    font-size: 11px !important;
-    font-weight: 500 !important;
-    color: var(--apm-success) !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    max-width: 260px !important;
-    display: inline-block !important;
-    line-height: 1.3 !important;
+.api-profile-manager__quick-switch-item {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-xs);
+    flex: 1;
+    min-width: 0;
+}
+
+.api-profile-manager__quick-switch-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--apm-text-muted);
+    white-space: nowrap;
+}
+
+.api-profile-manager__quick-switch-select {
+    flex: 1;
+    min-width: 0;
+    padding: var(--apm-space-xs) var(--apm-space-sm);
+    background: var(--apm-surface);
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-sm);
+    color: var(--apm-text);
+    font-size: 12px;
+    cursor: pointer;
+    transition: var(--apm-transition-fast);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 28px;
+}
+
+.api-profile-manager__quick-switch-select:hover {
+    border-color: var(--apm-border-light);
+}
+
+.api-profile-manager__quick-switch-select:focus {
+    outline: none;
+    border-color: var(--apm-accent);
+}
+
+.api-profile-manager__quick-switch-apply {
+    padding: var(--apm-space-xs) var(--apm-space-md);
+    background: var(--apm-accent);
+    border: none;
+    border-radius: var(--apm-radius-sm);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--apm-transition-fast);
+}
+
+.api-profile-manager__quick-switch-apply:hover:not(:disabled) {
+    background: var(--apm-accent-hover);
+}
+
+.api-profile-manager__quick-switch-apply:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* =========================================
+   API管家 现代化 UI 布局 v3.0
+   ========================================= */
+
+/* === 通用按钮样式 === */
+.api-profile-manager__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: var(--apm-radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: var(--apm-transition-fast);
+    white-space: nowrap;
+}
+
+.api-profile-manager__btn span {
+    font-size: 14px;
+}
+
+.api-profile-manager__btn--primary {
+    background: var(--apm-accent);
+    color: #fff;
+}
+
+.api-profile-manager__btn--primary:hover {
+    background: var(--apm-accent-hover);
+    transform: translateY(-1px);
+}
+
+.api-profile-manager__btn--ghost {
+    background: var(--apm-surface);
+    border-color: var(--apm-border);
+    color: var(--apm-text);
+}
+
+.api-profile-manager__btn--ghost:hover {
+    background: var(--apm-surface-hover);
+    border-color: var(--apm-border-light);
+}
+
+.api-profile-manager__btn--small {
+    padding: 6px 10px;
+    font-size: 12px;
+    background: var(--apm-surface);
+    border: 1px solid var(--apm-border);
+    color: var(--apm-text);
+}
+
+.api-profile-manager__btn--small:hover {
+    background: var(--apm-accent);
+    border-color: var(--apm-accent);
+    color: #fff;
+}
+
+.api-profile-manager__btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-sm);
+    color: var(--apm-text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--apm-transition-fast);
+}
+
+.api-profile-manager__btn-icon:hover {
+    background: var(--apm-surface-hover);
+    border-color: var(--apm-border-light);
+    color: var(--apm-text);
+}
+
+/* === 主页容器 === */
+.api-profile-manager__home {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+/* === 主页顶栏 === */
+.api-profile-manager__home-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--apm-space-lg) var(--apm-space-xl);
+    border-bottom: 1px solid var(--apm-border);
+}
+
+.api-profile-manager__header-left {
+    display: flex;
+    align-items: baseline;
+    gap: var(--apm-space-md);
+}
+
+.api-profile-manager__home-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--apm-text);
+    margin: 0;
+}
+
+.api-profile-manager__home-count {
+    font-size: 12px;
+    color: var(--apm-text-muted);
+    background: var(--apm-surface);
+    padding: 2px 8px;
+    border-radius: var(--apm-radius-full);
+}
+
+.api-profile-manager__header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-sm);
+}
+
+/* === 配置列表 === */
+.api-profile-manager__config-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--apm-space-lg);
+}
+
+/* === 配置卡片 === */
+.api-profile-manager__config-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--apm-space-lg);
+    background: var(--apm-surface);
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-lg);
+    margin-bottom: var(--apm-space-md);
+    transition: var(--apm-transition-fast);
+    box-shadow: var(--apm-shadow-sm);
+}
+
+.api-profile-manager__config-card:hover {
+    background: var(--apm-surface-hover);
+    border-color: var(--apm-border-light);
+    box-shadow: var(--apm-shadow-md);
+    transform: translateY(-2px);
+}
+
+.api-profile-manager__config-card.is-active {
+    border-color: var(--apm-success);
+    background: linear-gradient(135deg, var(--apm-success-bg), var(--apm-surface));
+}
+
+.api-profile-manager__config-card.is-active:hover {
+    background: linear-gradient(135deg, var(--apm-success-bg), var(--apm-surface-hover));
+}
+
+/* 卡片主区域 */
+.api-profile-manager__config-card-main {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-lg);
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.api-profile-manager__config-card-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    background: var(--apm-bg);
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-md);
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.api-profile-manager__config-card-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.api-profile-manager__config-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-sm);
+}
+
+.api-profile-manager__config-card-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--apm-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.api-profile-manager__config-card-badge {
+    padding: 2px 8px;
+    background: var(--apm-success);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: var(--apm-radius-full);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.api-profile-manager__config-card-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-sm);
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--apm-text-muted);
+}
+
+.api-profile-manager__config-card-divider {
+    opacity: 0.5;
+}
+
+.api-profile-manager__config-card-warning {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--apm-warning);
+}
+
+/* 卡片操作区域 */
+.api-profile-manager__config-card-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-md);
+    flex-shrink: 0;
+}
+
+.api-profile-manager__status-text {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--apm-success);
+}
+
+/* === 空状态 === */
+.api-profile-manager__empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: var(--apm-space-2xl);
+}
+
+.api-profile-manager__empty-content {
+    text-align: center;
+    max-width: 300px;
+}
+
+.api-profile-manager__empty-illustration {
+    font-size: 64px;
+    margin-bottom: var(--apm-space-xl);
+    opacity: 0.7;
+}
+
+.api-profile-manager__empty-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--apm-text);
+    margin: 0 0 var(--apm-space-sm);
+}
+
+.api-profile-manager__empty-text {
+    font-size: 14px;
+    color: var(--apm-text-muted);
+    margin: 0 0 var(--apm-space-xl);
+    line-height: 1.6;
+}
+
+/* === 批量操作栏 === */
+.api-profile-manager__batch-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-md);
+    padding: var(--apm-space-sm) var(--apm-space-lg);
+    background: var(--apm-bg);
+    border-bottom: 1px solid var(--apm-border);
+}
+
+.api-profile-manager__checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--apm-space-xs);
+    font-size: 13px;
+    color: var(--apm-text);
+    cursor: pointer;
+}
+
+.api-profile-manager__checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--apm-accent);
+    cursor: pointer;
+}
+
+.api-profile-manager__batch-count {
+    font-size: 12px;
+    color: var(--apm-text-muted);
+    margin-left: auto;
+}
+
+/* 选中状态 */
+.api-profile-manager__config-card.is-selected {
+    border-color: var(--apm-accent);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), var(--apm-surface));
+}
+
+/* 复选框区域 */
+.api-profile-manager__config-card-checkbox {
+    display: flex;
+    align-items: center;
+    padding-right: var(--apm-space-sm);
+}
+
+.api-profile-manager__config-card {
+    transition: 
+        border-color 150ms ease,
+        background 150ms ease,
+        transform 150ms ease,
+        box-shadow 150ms ease;
+}
+
+/* === 响应式调整 === */
+@media (max-width: 720px) {
+    .api-profile-manager__config-card {
+        padding: var(--apm-space-md);
+    }
+    
+    .api-profile-manager__config-card-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
+    }
+    
+    .api-profile-manager__config-card-name {
+        font-size: 14px;
+    }
+}
+
+/* 隐藏不再使用的旧类 */
 }
 
 .api-profile-manager__overlay {
@@ -310,29 +658,7 @@
     align-items: center !important;
 }
 
-.api-profile-manager__hero-main,
-.api-profile-manager__hero-brand,
-.api-profile-manager__hero-copy,
-.api-profile-manager__hero-topline,
-.api-profile-manager__hero-summary,
-.api-profile-manager__hero-utilities,
-.api-profile-manager__hero-actions,
-.api-profile-manager__grabber,
-.api-profile-manager__footer,
-.api-profile-manager__stats,
-.api-profile-manager__welcome-card,
-.api-profile-manager__welcome-card--compact,
-.api-profile-manager__welcome-card--empty,
-.api-profile-manager__stat-card,
-.api-profile-manager__group-badges,
-.api-profile-manager__inline-actions,
 .api-profile-manager__drawer-head,
-.api-profile-manager__section-kicker,
-.api-profile-manager__eyebrow,
-.api-profile-manager__subtitle,
-.api-profile-manager__launcher-copy,
-.api-profile-manager__field-note {
-    all: unset;
 }
 
 .api-profile-manager__content {
@@ -366,59 +692,18 @@
     justify-content: center !important;
 }
 
-.api-profile-manager__group-card {
-    background: var(--apm-surface-soft) !important;
-    border: 1px solid var(--apm-border) !important;
-    border-radius: var(--apm-radius-md) !important;
-    margin-bottom: 12px !important;
-    padding: 0 !important;
-    display: block !important;
 }
 
-.api-profile-manager__group-top {
-    padding: 16px !important;
-    align-items: center !important;
 }
 
-.api-profile-manager__drawer-list {
-    padding: 0 14px 14px 14px !important;
-    border-top: 1px solid var(--apm-border) !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 6px !important;
 }
 
-.api-profile-manager__group-model-summary {
-    display: flex !important;
-    align-items: center !important;
-    min-height: 38px !important;
-    padding: 0 10px !important;
-    border-radius: 8px !important;
-    background: transparent !important;
-    border: none !important;
-    margin-bottom: 2px !important;
 }
 
-.api-profile-manager__group-model-count {
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    color: var(--apm-text-muted) !important;
-    letter-spacing: 0.04em !important;
-    text-transform: uppercase !important;
 }
 
-.api-profile-manager__drawer-item {
-    padding: 14px 12px !important;
-    border-bottom: none !important;
-    border-radius: 8px !important;
-    margin-top: 4px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
 }
 
-.api-profile-manager__drawer-item:hover {
-    background: var(--apm-surface-soft) !important;
 }
 
 .api-profile-manager__profile-action {
@@ -441,12 +726,6 @@
     border-color: rgba(14, 165, 233, 0.5) !important;
 }
 
-.api-profile-manager__profile-action--status {
-    background: rgba(16, 185, 129, 0.12) !important;
-    color: #10b981 !important;
-    border: 1px solid rgba(16, 185, 129, 0.28) !important;
-    font-weight: 600 !important;
-    cursor: default !important;
 }
 
 .api-profile-manager__profile-action--danger {
@@ -458,14 +737,6 @@
     color: var(--apm-danger) !important;
 }
 
-.api-profile-manager__active-dot {
-    width: 6px !important;
-    height: 6px !important;
-    border-radius: 50% !important;
-    background: var(--apm-success) !important;
-    display: inline-block !important;
-    margin-right: 8px !important;
-    animation: pulse-glow 2s infinite;
 }
 
 .api-profile-manager__editor-block {
@@ -474,11 +745,6 @@
     border-radius: var(--apm-radius-md) !important;
     padding: 20px !important;
     margin-bottom: 20px !important;
-}
-
-.apm-light-theme .api-profile-manager__editor-block,
-.light-theme .api-profile-manager__editor-block {
-    background: #f8fafc !important;
 }
 
 .api-profile-manager__label {
@@ -490,14 +756,6 @@
 .api-profile-manager__select {
     background: rgba(0,0,0,0.3) !important;
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.2) !important;
-}
-
-.apm-light-theme .api-profile-manager__input,
-.apm-light-theme .api-profile-manager__select,
-.light-theme .api-profile-manager__input,
-.light-theme .api-profile-manager__select {
-    background: #ffffff !important;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02) !important;
 }
 
 @media (max-width: 720px) {
@@ -520,24 +778,6 @@
         padding: 0 !important;
         box-shadow: none !important;
     }
-}
-
-.api-profile-manager.light-theme {
-    --apm-shadow-sheet: 0 28px 64px rgba(27, 38, 59, 0.18);
-    --apm-shadow-card: 0 18px 40px rgba(54, 72, 104, 0.12);
-    --apm-shadow-soft: 0 10px 28px rgba(65, 82, 118, 0.1);
-    --apm-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 255, 0.98));
-    --apm-surface: color-mix(in srgb, rgba(255, 255, 255, 0.94) 78%, rgba(229, 236, 248, 0.9));
-    --apm-surface-strong: color-mix(in srgb, rgba(255, 255, 255, 0.98) 88%, rgba(230, 238, 250, 0.94));
-    --apm-surface-soft: color-mix(in srgb, rgba(239, 244, 252, 0.95) 92%, rgba(255, 255, 255, 0.96));
-    --apm-border: color-mix(in srgb, rgba(128, 149, 184, 0.28) 92%, rgba(255, 255, 255, 0.9));
-    --apm-text: #16304d;
-    --apm-text-muted: #60758f;
-    --apm-accent: #2288aa;
-    --apm-accent-strong: #20687f;
-    --apm-danger: #c85c5c;
-    --apm-success: #2f8f72;
-    --apm-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .api-profile-manager--hidden {
@@ -564,51 +804,12 @@
     margin: 0 auto;
 }
 
-.api-profile-manager__launcher-shell {
-    position: relative;
 }
 
-.api-profile-manager__fab,
-.api-profile-manager__launcher-button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--apm-space-2);
-    padding: 0 var(--apm-space-3);
-    height: 40px;
-    border: 1px solid var(--apm-border);
-    border-radius: var(--apm-radius-pill);
-    background:
-        radial-gradient(circle at 15% 20%, rgba(255, 230, 155, 0.38), transparent 38%),
-        linear-gradient(135deg, rgba(82, 228, 255, 0.18), rgba(94, 255, 201, 0.14) 40%, rgba(255, 255, 255, 0.04) 100%),
-        var(--apm-surface-strong);
-    box-shadow: var(--apm-shadow-card);
-    color: var(--apm-text);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    transition: transform var(--apm-transition), box-shadow var(--apm-transition), border-color var(--apm-transition);
 }
 
-.api-profile-manager__fab:hover,
-.api-profile-manager__fab:focus-visible,
-.api-profile-manager__launcher-button:hover,
-.api-profile-manager__launcher-button:focus-visible {
-    transform: translateY(-1px) scale(1.01);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-    border-color: color-mix(in srgb, var(--apm-accent) 62%, var(--apm-border));
 }
 
-.api-profile-manager__fab-icon {
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--apm-accent) 20%, rgba(255, 255, 255, 0.08));
-    font-size: 15px;
 }
 
 .api-profile-manager__launcher-bar {
@@ -639,26 +840,10 @@
     pointer-events: none;
 }
 
-.api-profile-manager__launcher-copy,
-.api-profile-manager__welcome-copy,
-.api-profile-manager__drawer-copy,
-.api-profile-manager__hero-copy {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
 }
 
-.api-profile-manager__launcher-copy {
-    gap: var(--apm-space-1);
 }
 
-.api-profile-manager__launcher-kicker,
-.api-profile-manager__section-kicker {
-    color: var(--apm-accent-strong);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
 }
 
 .api-profile-manager__launcher-title {
@@ -668,10 +853,6 @@
     line-height: 1.3;
 }
 
-.api-profile-manager__launcher-meta {
-    color: var(--apm-text-muted);
-    font-size: 12px;
-    line-height: 1.5;
 }
 
 .api-profile-manager__launcher-actions {
@@ -681,23 +862,8 @@
     flex-shrink: 0;
 }
 
-.api-profile-manager__launcher-stat {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 52px;
-    min-height: 34px;
-    padding: 0 var(--apm-space-3);
-    border: 1px solid var(--apm-border);
-    border-radius: var(--apm-radius-pill);
-    background: color-mix(in srgb, var(--apm-surface-soft) 100%, transparent);
-    color: var(--apm-text-muted);
-    font-size: 12px;
-    font-weight: 700;
 }
 
-.api-profile-manager__launcher-open {
-    white-space: nowrap;
 }
 
 .api-profile-manager__overlay {
@@ -738,19 +904,10 @@
     max-height: min(84vh, 980px);
 }
 
-.api-profile-manager__grabber {
-    width: 56px;
-    height: 5px;
-    margin: var(--apm-space-3) auto var(--apm-space-2);
-    border-radius: var(--apm-radius-pill);
-    background: color-mix(in srgb, var(--apm-text-muted) 46%, transparent);
 }
 
 .api-profile-manager__hero,
 .api-profile-manager__content,
-.api-profile-manager__footer {
-    padding-left: var(--apm-space-5);
-    padding-right: var(--apm-space-5);
 }
 
 .popup .popup-content:has(.api-profile-manager__popup-content) {
@@ -761,6 +918,162 @@
 
 .popup .popup-body:has(.api-profile-manager__popup-content) {
     overflow: visible;
+}
+
+/* =========================================
+   API管家 动画与过渡效果 v2.0
+   ========================================= */
+
+/* 面板弹出动画 */
+@keyframes sheetSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.api-profile-manager__sheet--popup {
+    animation: sheetSlideUp 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 遮罩层淡入 */
+.api-profile-manager__overlay {
+    animation: overlayFadeIn 200ms ease-out;
+}
+
+@keyframes overlayFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* 列表项交错入场动画 */
+.api-profile-manager__config-list {
+    animation: listFadeIn 300ms ease-out;
+}
+
+@keyframes listFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.api-profile-manager__config-card {
+    animation: cardSlideUp 350ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* 交错延迟：每个卡片延迟 50ms */
+.api-profile-manager__config-card:nth-child(1) { animation-delay: 0ms; }
+.api-profile-manager__config-card:nth-child(2) { animation-delay: 50ms; }
+.api-profile-manager__config-card:nth-child(3) { animation-delay: 100ms; }
+.api-profile-manager__config-card:nth-child(4) { animation-delay: 150ms; }
+.api-profile-manager__config-card:nth-child(5) { animation-delay: 200ms; }
+.api-profile-manager__config-card:nth-child(6) { animation-delay: 250ms; }
+.api-profile-manager__config-card:nth-child(7) { animation-delay: 300ms; }
+.api-profile-manager__config-card:nth-child(8) { animation-delay: 350ms; }
+.api-profile-manager__config-card:nth-child(9) { animation-delay: 400ms; }
+.api-profile-manager__config-card:nth-child(10) { animation-delay: 450ms; }
+
+@keyframes cardSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 卡片悬停微动效 */
+.api-profile-manager__config-card {
+    transition: 
+        transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+        box-shadow 200ms ease,
+        border-color 200ms ease,
+        background 200ms ease;
+}
+
+.api-profile-manager__config-card:hover {
+    transform: translateY(-3px);
+}
+
+.api-profile-manager__config-card:active {
+    transform: translateY(-1px);
+    transition-duration: 100ms;
+}
+
+/* 按钮悬停微动效 */
+.api-profile-manager__btn {
+    transition: 
+        transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 150ms ease,
+        border-color 150ms ease,
+        box-shadow 150ms ease;
+}
+
+.api-profile-manager__btn:hover {
+    transform: translateY(-1px);
+}
+
+.api-profile-manager__btn:active {
+    transform: translateY(0);
+    transition-duration: 80ms;
+}
+
+/* 图标按钮悬停 */
+.api-profile-manager__btn-icon,
+.api-profile-manager__icon-btn {
+    transition: 
+        transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 150ms ease,
+        color 150ms ease,
+        border-color 150ms ease;
+}
+
+.api-profile-manager__btn-icon:hover,
+.api-profile-manager__icon-btn:hover {
+    transform: scale(1.05);
+}
+
+.api-profile-manager__btn-icon:active,
+.api-profile-manager__icon-btn:active {
+    transform: scale(0.95);
+}
+
+/* 开关切换动画 */
+}
+
+}
+
+/* 输入框聚焦动画 */
+.api-profile-manager__input,
+.api-profile-manager__select {
+    transition: 
+        border-color 200ms ease,
+        box-shadow 200ms ease,
+        background 200ms ease;
+}
+
+.api-profile-manager__input:focus,
+.api-profile-manager__select:focus {
+    border-color: var(--apm-accent);
+    box-shadow: 0 0 0 3px var(--apm-accent-alpha);
+    outline: none;
+}
+
+/* 尊重用户的动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
 }
 
 .popup.transparent_dialogue_popup:has(.api-profile-manager__popup-content) {
@@ -782,61 +1095,16 @@
     border-bottom: 1px solid color-mix(in srgb, var(--apm-border) 92%, transparent);
 }
 
-.api-profile-manager__hero-main {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--apm-space-4);
-    min-width: 0;
-    flex: 1 1 auto;
 }
 
-.api-profile-manager__hero-brand {
-    width: 56px;
-    height: 56px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 18px;
-    background:
-        radial-gradient(circle at 30% 25%, rgba(255, 236, 179, 0.78), transparent 36%),
-        linear-gradient(135deg, rgba(82, 228, 255, 0.34), rgba(94, 255, 201, 0.2) 44%, rgba(255, 255, 255, 0.08));
-    border: 1px solid color-mix(in srgb, var(--apm-accent) 34%, var(--apm-border));
-    box-shadow: var(--apm-shadow-soft);
-    color: var(--apm-text);
-    font-size: 15px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    flex-shrink: 0;
 }
 
-.api-profile-manager__hero-copy {
-    gap: var(--apm-space-2);
 }
 
-.api-profile-manager__hero-topline,
-.api-profile-manager__hero-summary,
-.api-profile-manager__welcome-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--apm-space-2);
 }
 
-.api-profile-manager__hero-utilities {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--apm-space-3);
-    flex-shrink: 0;
 }
 
-.api-profile-manager__eyebrow {
-    margin: 0 0 var(--apm-space-2);
-    color: var(--apm-accent-strong);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
 }
 
 .api-profile-manager__title {
@@ -847,19 +1115,12 @@
     line-height: 1.1;
 }
 
-.api-profile-manager__subtitle,
 .api-profile-manager__status,
 .api-profile-manager__empty,
 .api-profile-manager__meta,
-.api-profile-manager__field-note,
 .api-profile-manager__tools-note {
-    color: var(--apm-text-muted);
-    line-height: 1.5;
 }
 
-.api-profile-manager__subtitle {
-    margin: var(--apm-space-1) 0 0;
-    font-size: 12px;
 }
 
 .api-profile-manager__status {
@@ -867,35 +1128,15 @@
     font-size: 12px;
 }
 
-.api-profile-manager__hero-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--apm-space-2);
 }
 
 .api-profile-manager__pill,
 .api-profile-manager__button,
-.api-profile-manager__icon-button,
-.api-profile-manager__segmented button,
 .api-profile-manager__sheet-close,
 .api-profile-manager__profile-action {
-    border: 1px solid transparent;
-    transition: background var(--apm-transition), border-color var(--apm-transition), transform var(--apm-transition), opacity var(--apm-transition);
 }
 
 .api-profile-manager__sheet-close,
-.api-profile-manager__icon-button {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: color-mix(in srgb, var(--apm-surface) 72%, transparent);
-    color: var(--apm-text);
-    border-color: var(--apm-border);
 }
 
 .api-profile-manager__pill {
@@ -912,10 +1153,6 @@
     font-weight: 600;
 }
 
-.api-profile-manager__pill--accent {
-    background: linear-gradient(135deg, rgba(91, 229, 255, 0.2), rgba(103, 255, 191, 0.16));
-    color: var(--apm-text);
-    border-color: color-mix(in srgb, var(--apm-accent) 58%, var(--apm-border));
 }
 
 .api-profile-manager__pill--success {
@@ -941,24 +1178,14 @@
 
 .api-profile-manager__button:hover,
 .api-profile-manager__button:focus-visible,
-.api-profile-manager__icon-button:hover,
-.api-profile-manager__icon-button:focus-visible,
 .api-profile-manager__sheet-close:hover,
 .api-profile-manager__sheet-close:focus-visible,
 .api-profile-manager__profile-action:hover,
 .api-profile-manager__profile-action:focus-visible,
-.api-profile-manager__segmented button:hover,
-.api-profile-manager__segmented button:focus-visible {
-    transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--apm-accent) 52%, var(--apm-border));
 }
 
 .api-profile-manager__button--primary,
-.api-profile-manager__segmented button.is-active,
 .api-profile-manager__profile-action--primary {
-    background: linear-gradient(135deg, rgba(91, 229, 255, 0.24), rgba(103, 255, 191, 0.2));
-    color: var(--apm-text);
-    border-color: color-mix(in srgb, var(--apm-accent) 68%, var(--apm-border));
 }
 
 .api-profile-manager__button--danger,
@@ -971,8 +1198,6 @@
     background: transparent;
 }
 
-.api-profile-manager__button--full {
-    width: 100%;
 }
 
 .api-profile-manager__content {
@@ -994,105 +1219,32 @@
     padding-bottom: calc(var(--apm-space-4) + env(safe-area-inset-bottom, 0px));
 }
 
-.api-profile-manager__stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--apm-space-3);
 }
 
-.api-profile-manager__welcome-card,
-.api-profile-manager__editor-section {
-    position: relative;
-    border: 1px solid var(--apm-border);
-    border-radius: var(--apm-radius-md);
-    background:
-        radial-gradient(circle at 0% 0%, rgba(255, 232, 163, 0.12), transparent 30%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 32%),
-        var(--apm-surface-strong);
-    box-shadow: var(--apm-shadow-card);
-    box-shadow: var(--apm-shadow-card), var(--apm-shadow-inset);
 }
 
-.api-profile-manager__welcome-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--apm-space-4);
-    padding: var(--apm-space-4);
 }
 
-.api-profile-manager__welcome-card--compact {
-    align-items: flex-start;
 }
 
-.api-profile-manager__welcome-card--empty {
-    min-height: 220px;
 }
 
-.api-profile-manager__stat-card,
-.api-profile-manager__group-card,
 .api-profile-manager__profile-card,
-.api-profile-manager__editor-card,
 .api-profile-manager__tools-card,
-.api-profile-manager__secondary-actions {
-    position: relative;
-    border: 1px solid var(--apm-border);
-    border-radius: var(--apm-radius-md);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 32%),
-        var(--apm-surface);
-    box-shadow: var(--apm-shadow-card);
 }
 
-.api-profile-manager__stat-card {
-    padding: var(--apm-space-3);
 }
 
-.api-profile-manager__stat-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--apm-space-1);
 }
 
-.api-profile-manager__stat-label {
-    display: block;
-    color: var(--apm-text-muted);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
 }
 
-.api-profile-manager__stat-value {
-    display: block;
-    margin-top: var(--apm-space-2);
-    color: var(--apm-text);
-    font-size: 22px;
-    font-weight: 800;
 }
 
-.api-profile-manager__stat-note {
-    color: var(--apm-text-muted);
-    font-size: 12px;
-    line-height: 1.5;
 }
 
-.api-profile-manager__segmented {
-    display: inline-grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--apm-space-1);
-    padding: var(--apm-space-1);
-    border-radius: var(--apm-radius-pill);
-    background: color-mix(in srgb, var(--apm-surface-soft) 100%, transparent);
-    border: 1px solid var(--apm-border);
 }
 
-.api-profile-manager__segmented button {
-    min-height: 34px;
-    border-radius: var(--apm-radius-pill);
-    background: transparent;
-    color: var(--apm-text-muted);
-    font-size: 12px;
-    font-weight: 700;
 }
 
 .api-profile-manager__section-head {
@@ -1114,169 +1266,71 @@
     font-size: 12px;
 }
 
-.api-profile-manager__group-list,
 .api-profile-manager__profile-list,
 .api-profile-manager__field-grid,
 .api-profile-manager__tool-actions {
-    display: grid;
-    gap: var(--apm-space-3);
 }
 
-.api-profile-manager__group-list,
 .api-profile-manager__profile-list {
-    grid-template-columns: 1fr;
 }
 
-.api-profile-manager__group-card,
 .api-profile-manager__profile-card,
-.api-profile-manager__editor-card,
 .api-profile-manager__tools-card,
-.api-profile-manager__secondary-actions {
-    padding: var(--apm-space-4);
 }
 
-.api-profile-manager__group-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--apm-space-2);
-    padding: 0;
 }
 
-.api-profile-manager__glass-card,
 .api-profile-manager__editor-block,
 .api-profile-manager__model-picker-shell,
-.api-profile-manager__drawer-item,
 .api-profile-manager__status-bar,
 .api-profile-manager__sheet {
-    backdrop-filter: blur(18px) saturate(145%);
-    -webkit-backdrop-filter: blur(18px) saturate(145%);
 }
 
-.api-profile-manager__group-card.is-active,
 .api-profile-manager__profile-card.is-active,
-.api-profile-manager__drawer-item.is-active {
-    border-color: color-mix(in srgb, var(--apm-accent) 52%, var(--apm-border));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--apm-accent) 18%, transparent), var(--apm-shadow-card);
 }
 
-.api-profile-manager__group-card.is-expanded {
-    border-color: color-mix(in srgb, var(--apm-accent) 45%, var(--apm-border));
 }
 
-.api-profile-manager__group-top,
 .api-profile-manager__profile-top,
-.api-profile-manager__toolbar {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--apm-space-3);
 }
 
-.api-profile-manager__group-top {
-    cursor: pointer;
-    align-items: center;
-    min-height: 76px;
-    padding: var(--apm-space-4);
-    border-radius: var(--apm-radius-md);
 }
 
-.api-profile-manager__group-title-wrap {
-    display: flex;
-    align-items: center;
-    gap: var(--apm-space-2);
-    min-width: 0;
 }
 
-.api-profile-manager__group-main {
-    display: flex;
-    align-items: center;
-    gap: var(--apm-space-2);
-    min-width: 0;
 }
 
-.api-profile-manager__group-arrow {
-    color: var(--apm-text-muted);
-    transition: transform var(--apm-transition);
-    flex-shrink: 0;
-    width: 9px;
-    height: 9px;
-    border-right: 2px solid currentColor;
-    border-bottom: 2px solid currentColor;
-    transform: rotate(-45deg);
-    margin-right: 2px;
 }
 
-.api-profile-manager__group-arrow.is-expanded {
-    transform: rotate(45deg);
 }
 
-.api-profile-manager__group-side,
+}
+
+}
+
+}
+
 .api-profile-manager__drawer-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--apm-space-2);
 }
 
-.api-profile-manager__group-side .api-profile-manager__button--compact {
-    min-height: 28px;
-    padding: 0 9px;
-    font-size: 11px;
 }
 
-.api-profile-manager__group-state {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 30px;
-    padding: 0 12px;
-    border-radius: var(--apm-radius-pill);
-    background: color-mix(in srgb, rgba(148, 163, 184, 0.2) 100%, transparent);
-    border: 1px solid color-mix(in srgb, rgba(148, 163, 184, 0.36) 100%, transparent);
-    color: var(--apm-text-muted);
-    font-size: 12px;
-    font-weight: 700;
 }
 
-.api-profile-manager__group-state.is-active {
-    background: color-mix(in srgb, #2dd4bf 18%, transparent);
-    border-color: color-mix(in srgb, #2dd4bf 42%, transparent);
-    color: #5eead4;
 }
 
-.api-profile-manager__group-state--warning,
-.api-profile-manager__drawer-status--warning,
+}
+
 .api-profile-manager__section-subtitle--warning {
-    color: #fbbf24;
 }
 
-.api-profile-manager__group-state--warning {
-    background: color-mix(in srgb, #f59e0b 18%, transparent);
-    border-color: color-mix(in srgb, #f59e0b 40%, transparent);
 }
 
-.api-profile-manager__group-name,
 .api-profile-manager__profile-name,
-.api-profile-manager__editor-title,
 .api-profile-manager__tools-title {
-    margin: 0;
-    color: var(--apm-text);
-    font-size: 15px;
-    font-weight: 800;
-    line-height: 1.2;
 }
 
-.api-profile-manager__group-label,
 .api-profile-manager__profile-label {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--apm-space-1);
-    color: var(--apm-accent-strong);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
 }
 
 .api-profile-manager__meta {
@@ -1289,14 +1343,8 @@
     font-size: 12px;
 }
 
-.api-profile-manager__group-badges,
 .api-profile-manager__profile-badges,
-.api-profile-manager__inline-actions,
-.api-profile-manager__footer,
 .api-profile-manager__tool-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--apm-space-2);
 }
 
 .api-profile-manager__profile-card {
@@ -1311,76 +1359,27 @@
     flex-wrap: wrap;
 }
 
-.api-profile-manager__drawer-list {
-    display: grid;
-    gap: var(--apm-space-2);
 }
 
-.api-profile-manager__group-model-list {
-    padding: 0 var(--apm-space-4) var(--apm-space-4);
 }
 
-.api-profile-manager__group-model-summary {
-    display: flex;
-    align-items: center;
-    min-height: 48px;
-    padding: 0 14px;
-    border: 1px solid color-mix(in srgb, var(--apm-border) 92%, transparent);
-    border-radius: var(--apm-radius-md);
-    background: color-mix(in srgb, var(--apm-surface-strong) 82%, transparent);
 }
 
-.api-profile-manager__group-model-count {
-    color: var(--apm-text);
-    font-size: 13px;
-    font-weight: 800;
 }
 
-.api-profile-manager__drawer-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--apm-space-3);
-    padding: var(--apm-space-2) 0 var(--apm-space-1);
-    flex-wrap: wrap;
 }
 
-.api-profile-manager__drawer-toolbar-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--apm-space-2);
 }
 
-.api-profile-manager__drawer-summary,
 .api-profile-manager__drawer-status,
 .api-profile-manager__picker-note,
 .api-profile-manager__picker-empty {
-    margin: 0;
-    color: var(--apm-text-muted);
-    font-size: 12px;
-    line-height: 1.5;
 }
 
-.api-profile-manager__drawer-main {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
 }
 
-.api-profile-manager__drawer-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--apm-space-3);
-    padding: 12px 14px;
-    border: 1px solid color-mix(in srgb, var(--apm-border) 90%, transparent);
-    border-radius: var(--apm-radius-sm);
-    background: color-mix(in srgb, var(--apm-surface-soft) 100%, transparent);
 }
 
-.api-profile-manager__drawer-item--row {
-    min-height: 52px;
 }
 
 .api-profile-manager__drawer-title {
@@ -1390,31 +1389,23 @@
     font-weight: 700;
 }
 
-.api-profile-manager__drawer-title-button {
-    display: block;
-    width: 100%;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--apm-text);
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-.api-profile-manager__drawer-title-button.is-expanded {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    word-break: break-word;
 }
 
 .api-profile-manager__drawer-actions {
     display: flex;
     gap: var(--apm-space-2);
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: flex-start;
+}
+
+}
+
+}
+
+}
+
 }
 
 .api-profile-manager__profile-action {
@@ -1430,10 +1421,6 @@
     box-shadow: inset 0 0 0 1px color-mix(in srgb, rgba(255, 255, 255, 0.02) 100%, transparent);
 }
 
-.api-profile-manager__profile-action--status {
-    background: color-mix(in srgb, #2dd4bf 18%, transparent);
-    border-color: color-mix(in srgb, #2dd4bf 42%, transparent);
-    color: #5eead4;
 }
 
 .api-profile-manager__button--compact {
@@ -1442,41 +1429,19 @@
     font-size: 12px;
 }
 
-.api-profile-manager__editor-card,
 .api-profile-manager__tools-card,
-.api-profile-manager__secondary-actions {
-    display: flex;
-    flex-direction: column;
-    gap: var(--apm-space-4);
 }
 
-.api-profile-manager__editor-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--apm-space-4);
-    padding: var(--apm-space-4);
 }
 
-.api-profile-manager__editor-section-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--apm-space-3);
 }
 
-.api-profile-manager__toolbar {
-    align-items: center;
 }
 
 .api-profile-manager__field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.api-profile-manager__secondary-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 180px) 1fr;
-    gap: var(--apm-space-2);
-    align-items: center;
 }
 
 .api-profile-manager__field {
@@ -1496,23 +1461,9 @@
 }
 
 .api-profile-manager__input,
-.api-profile-manager__textarea,
 .api-profile-manager__select {
-    width: 100%;
-    min-height: 42px;
-    padding: 0 var(--apm-space-3);
-    border: 1px solid var(--apm-border);
-    border-radius: var(--apm-radius-sm);
-    background: color-mix(in srgb, var(--apm-surface-soft) 92%, rgba(255, 255, 255, 0.02));
-    color: var(--apm-text);
-    font-size: 13px;
-    transition: border-color var(--apm-transition), box-shadow var(--apm-transition), background var(--apm-transition);
 }
 
-.api-profile-manager__select--multiple {
-    min-height: 120px;
-    padding-top: var(--apm-space-2);
-    padding-bottom: var(--apm-space-2);
 }
 
 .api-profile-manager__model-picker-block {
@@ -1557,10 +1508,6 @@
     flex-wrap: wrap;
 }
 
-.api-profile-manager__selected-models {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--apm-space-2);
 }
 
 .api-profile-manager__selected-model-summary {
@@ -1625,24 +1572,10 @@
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--apm-accent) 16%, transparent);
 }
 
-.api-profile-manager__model-chip-main,
 .api-profile-manager__model-chip-remove,
 .api-profile-manager__model-option {
-    border: 0;
-    background: transparent;
-    color: inherit;
 }
 
-.api-profile-manager__model-chip-main {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--apm-space-2);
-    min-height: 36px;
-    max-width: 100%;
-    padding: 0 var(--apm-space-3);
-    color: var(--apm-text);
-    font-size: 12px;
-    font-weight: 700;
 }
 
 .api-profile-manager__model-chip-badge {
@@ -1696,13 +1629,8 @@
 .api-profile-manager__model-option:focus-visible,
 .api-profile-manager__button:focus-visible,
 .api-profile-manager__profile-action:focus-visible,
-.api-profile-manager__model-chip-main:hover,
-.api-profile-manager__model-chip-main:focus-visible,
 .api-profile-manager__model-chip-remove:hover,
 .api-profile-manager__model-chip-remove:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--apm-accent) 48%, transparent);
-    outline-offset: 2px;
-    transform: translateY(-1px);
 }
 
 .api-profile-manager__model-option.is-selected {
@@ -1752,19 +1680,10 @@
     border-top: 1px dashed var(--apm-border);
 }
 
-.api-profile-manager__textarea {
-    min-height: 88px;
-    padding-top: var(--apm-space-3);
-    padding-bottom: var(--apm-space-3);
-    resize: vertical;
 }
 
 .api-profile-manager__input:focus,
-.api-profile-manager__textarea:focus,
 .api-profile-manager__select:focus {
-    outline: none;
-    border-color: color-mix(in srgb, var(--apm-accent) 65%, var(--apm-border));
-    box-shadow: 0 0 0 3px rgba(91, 229, 255, 0.12);
 }
 
 .api-profile-manager__secret {
@@ -1790,11 +1709,6 @@
     accent-color: var(--apm-accent);
 }
 
-.api-profile-manager__footer {
-    padding-top: var(--apm-space-3);
-    padding-bottom: calc(var(--apm-space-5) + env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid var(--apm-border);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 100%);
 }
 
 .api-profile-manager__status-bar {
@@ -1828,15 +1742,11 @@
     font-size: 13px;
 }
 
-.api-profile-manager__group-list,
 .api-profile-manager__profile-list {
-    grid-template-columns: 1fr;
 }
 
 @media (min-width: 1025px) {
-    .api-profile-manager__group-list,
     .api-profile-manager__profile-list {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -1854,9 +1764,6 @@
 
     .api-profile-manager__hero,
     .api-profile-manager__content,
-    .api-profile-manager__footer {
-        padding-left: var(--apm-space-4);
-        padding-right: var(--apm-space-4);
     }
 }
 
@@ -1905,68 +1812,42 @@
 
     .api-profile-manager__hero,
     .api-profile-manager__content,
-    .api-profile-manager__footer {
-        padding-left: var(--apm-space-3);
-        padding-right: var(--apm-space-3);
     }
 
     .api-profile-manager__hero {
         flex-direction: column;
     }
 
-    .api-profile-manager__hero-main {
-        width: 100%;
     }
 
-    .api-profile-manager__hero-brand {
-        width: 48px;
-        height: 48px;
-        border-radius: 16px;
     }
 
-    .api-profile-manager__hero-utilities,
-    .api-profile-manager__hero-actions {
-        width: 100%;
-        align-items: stretch;
-        justify-content: space-between;
     }
 
-    .api-profile-manager__welcome-card,
-    .api-profile-manager__group-top,
     .api-profile-manager__profile-top {
-        flex-direction: column;
-        align-items: stretch;
     }
 
-    .api-profile-manager__welcome-actions,
-    .api-profile-manager__group-side,
     .api-profile-manager__drawer-head {
-        justify-content: flex-start;
+    }
+
+    }
+
     }
 
     .api-profile-manager__status-bar {
         min-width: 100%;
     }
 
-    .api-profile-manager__stats,
     .api-profile-manager__field-grid,
-    .api-profile-manager__secondary-grid,
     .api-profile-manager__model-option-list {
-        grid-template-columns: 1fr;
     }
 
-    .api-profile-manager__toolbar {
-        align-items: flex-start;
-        flex-direction: column;
     }
 
     .api-profile-manager__profile-action {
         flex-basis: calc(50% - var(--apm-space-2));
     }
 
-    .api-profile-manager__drawer-item {
-        flex-direction: column;
-        align-items: stretch;
     }
 
     .api-profile-manager__drawer-actions {
@@ -1985,4 +1866,177 @@
     .api-profile-manager__launcher-bar {
         padding: 10px 12px;
     }
+}
+
+/* =========================================
+   API管家 详情抽屉样式 v2.0
+   ========================================= */
+
+/* 抽屉遮罩层 */
+.api-profile-manager__drawer-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    justify-content: flex-end;
+    animation: drawerOverlayIn 200ms ease-out;
+}
+
+@keyframes drawerOverlayIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* 抽屉容器 */
+.api-profile-manager__drawer {
+    width: min(400px, 90vw);
+    height: 100%;
+    background: var(--apm-surface);
+    border-left: 1px solid var(--apm-border);
+    display: flex;
+    flex-direction: column;
+    animation: drawerSlideIn 250ms ease-out;
+    box-shadow: var(--apm-shadow-lg);
+}
+
+@keyframes drawerSlideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* 抽屉头部 */
+.api-profile-manager__drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--apm-space-lg) var(--apm-space-xl);
+    border-bottom: 1px solid var(--apm-border);
+    background: var(--apm-surface);
+}
+
+.api-profile-manager__drawer-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--apm-text);
+    margin: 0;
+}
+
+.api-profile-manager__drawer-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-sm);
+    color: var(--apm-text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    transition: var(--apm-transition-fast);
+}
+
+.api-profile-manager__drawer-close:hover {
+    background: var(--apm-surface-hover);
+    color: var(--apm-text);
+    border-color: var(--apm-border-light);
+}
+
+/* 抽屉内容 */
+.api-profile-manager__drawer-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--apm-space-lg);
+}
+
+.api-profile-manager__drawer-section {
+    margin-bottom: var(--apm-space-lg);
+}
+
+.api-profile-manager__drawer-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--apm-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--apm-space-xs);
+}
+
+.api-profile-manager__drawer-value {
+    font-size: 14px;
+    color: var(--apm-text);
+    line-height: 1.5;
+}
+
+.api-profile-manager__drawer-value--break {
+    word-break: break-all;
+    font-size: 13px;
+}
+
+.api-profile-manager__drawer-value--masked {
+    font-family: monospace;
+    letter-spacing: 1px;
+}
+
+.api-profile-manager__drawer-empty {
+    color: var(--apm-text-muted);
+    font-style: italic;
+}
+
+/* 模型标签 */
+.api-profile-manager__drawer-models {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--apm-space-xs);
+}
+
+.api-profile-manager__drawer-model-tag {
+    display: inline-block;
+    padding: 4px 8px;
+    background: var(--apm-bg);
+    border: 1px solid var(--apm-border);
+    border-radius: var(--apm-radius-sm);
+    font-size: 11px;
+    color: var(--apm-text-muted);
+}
+
+/* 抽屉底部操作区 */
+.api-profile-manager__drawer-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--apm-space-sm);
+    padding: var(--apm-space-lg) var(--apm-space-xl);
+    border-top: 1px solid var(--apm-border);
+    background: var(--apm-bg);
+}
+
+.api-profile-manager__drawer-status {
+    display: block;
+    text-align: center;
+    padding: var(--apm-space-sm) var(--apm-space-md);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: var(--apm-radius-md);
+}
+
+.api-profile-manager__drawer-status--active {
+    background: var(--apm-success-bg);
+    color: var(--apm-success);
+}
+
+/* 危险按钮样式 */
+.api-profile-manager__btn--danger {
+    background: transparent;
+    border: 1px solid var(--apm-danger);
+    color: var(--apm-danger);
+}
+
+.api-profile-manager__btn--danger:hover {
+    background: var(--apm-danger);
+    color: #fff;
 }

@@ -1,7 +1,7 @@
 import { getRequestHeaders, saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings, renderExtensionTemplateAsync } from '../../../extensions.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE, Popup } from '../../../popup.js';
-import { writeSecret } from '../../../secrets.js';
+import { writeSecret, SECRET_KEYS, secret_state } from '../../../secrets.js';
 
 console.log('[APM] local plugin loaded');
 
@@ -298,23 +298,43 @@ const TEXT_PROVIDER_CONFIG = {
 
 const dom = {};
 
+/**
+ * UI 状态管理
+ * 所有插件的 UI 状态都存储在这里
+ */
 const uiState = {
-    isOpen: false,
-    view: 'home',
-    activeGroupKey: '',
+    // 面板状态
+    isOpen: false,                    // 面板是否打开
+    view: 'home',                    // 当前视图: 'home' | 'group' | 'tools' | 'editor'
+    
+    // 分组相关
+    activeGroupKey: '',               // 当前展开的分组 key
+    
+    // 编辑器相关
+    editingProfileId: '',            // 当前编辑的配置 ID
+    editorDraft: null,                // 编辑器中的草稿配置对象
+    revealKey: false,                 // 是否显示 API Key 明文
+    
+    // 模型选择器相关
+    fetchedModels: [],               // 从 API 拉取的模型列表
+    modelPickerQuery: '',             // 模型选择器搜索关键词
+    isModelPickerOpen: false,        // 模型选择器是否展开
+    selectedModelQuery: '',           // 已选模型搜索框关键词
+    isSelectedModelPanelOpen: false, // 已选模型面板是否展开
+    pickerPanelScrollTop: 0,         // 模型选择器滚动位置
+    
+    // 状态显示
+    status: '就绪',                   // 底部状态栏文字
+    statusType: 'success',           // 状态类型: 'success' | 'error' | 'warning' | 'info'
+    
+    // 详情抽屉
+    drawerProfileId: null,           // 当前打开抽屉的配置 ID
+    
+    // 批量操作相关
+    selectedProfileIds: [],        // 已选择的配置 ID 列表
+    
+    // 模型行展开状态（已废弃，保留兼容性）
     expandedModelRows: {},
-    editingProfileId: '',
-    editorDraft: null,
-    fetchedModels: [],
-    modelPickerQuery: '',
-    isModelPickerOpen: false,
-    selectedModelQuery: '',
-    isSelectedModelPanelOpen: false,
-    pickerPanelScrollTop: 0,
-    status: '就绪',
-    statusType: 'success',
-    revealKey: false,
-    isLightMode: false,
 };
 
 let lastLauncherTouchAt = 0;
@@ -375,7 +395,8 @@ function escapeHtml(value) {
         .replaceAll("'", '&#39;');
 }
 
-function getSettings() {
+/** 获取插件设置（从 SillyTavern 扩展设置中读取） */
+    {
     if (!extension_settings.apiProfileManager) {
         extension_settings.apiProfileManager = clone(DEFAULT_SETTINGS);
     }
@@ -438,9 +459,19 @@ function parseStConnectionProfileContext(rawProfile) {
 
 function mapStConnectionProfileToPluginProfileFromLiveValues(rawProfile, liveValues) {
     const { name, mapped } = parseStConnectionProfileContext(rawProfile);
-    const model = normalizeText(liveValues.model || rawProfile?.model);
-    const baseUrl = normalizeText(liveValues.baseUrl);
-    const apiKey = String(liveValues.apiKey ?? '');
+    
+    // Try to get values from multiple sources
+    const model = normalizeText(liveValues.model || rawProfile?.model || '');
+    const baseUrl = normalizeText(liveValues.baseUrl || rawProfile?.url || rawProfile?.base_url || rawProfile?.endpoint || '');
+    const apiKey = String(liveValues.apiKey || rawProfile?.api_key || rawProfile?.key || rawProfile?.apiKey || '');
+
+    // Log what we found for debugging
+    console.log(`[APM] Import profile "${name}":`, {
+        model,
+        baseUrl,
+        apiKeyFound: apiKey ? 'Yes (length: ' + apiKey.length + ')' : 'No',
+        rawKeys: Object.keys(rawProfile || {}),
+    });
 
     if (!model && !baseUrl && !apiKey) {
         return null;
@@ -460,7 +491,7 @@ function mapStConnectionProfileToPluginProfileFromLiveValues(rawProfile, liveVal
         apiKey,
         createdAt: timestamp,
         updatedAt: timestamp,
-        notes: '从 SillyTavern Connection Profiles 导入',
+        notes: apiKey ? '从 SillyTavern Connection Profiles 导入' : '从 SillyTavern Connection Profiles 导入（需补充 API Key）',
     };
 }
 
@@ -476,11 +507,35 @@ function getHostControlsForProfile(rawProfile) {
 
 function readLiveHostValuesForProfile(rawProfile) {
     const { config, keySelector } = getHostControlsForProfile(rawProfile);
-    return {
-        baseUrl: config?.urlSelector ? readControlValue(config.urlSelector) || '' : '',
-        apiKey: keySelector ? readControlValue(keySelector) || '' : '',
-        model: config?.modelSelector ? readControlValue(asSelectorList(config.modelSelector)[0]) || '' : '',
-    };
+    
+    // First try to read from rawProfile data (this contains the actual values)
+    const apiKeyFromRaw = rawProfile?.api_key || rawProfile?.key || rawProfile?.apiKey || '';
+    const baseUrlFromRaw = rawProfile?.url || rawProfile?.base_url || rawProfile?.baseUrl || rawProfile?.endpoint || '';
+    const modelFromRaw = rawProfile?.model || '';
+    
+    // Try to read from SillyTavern's secret_state if available
+    let apiKeyFromSecrets = '';
+    const secretId = rawProfile?.['secret-id'] || rawProfile?.secret_id;
+    if (secretId && typeof secret_state !== 'undefined') {
+        // Try to find the secret value by ID
+        for (const key of Object.values(SECRET_KEYS || {})) {
+            const secrets = secret_state[key];
+            if (Array.isArray(secrets)) {
+                const secret = secrets.find(s => s.id === secretId);
+                if (secret && secret.value && secret.value !== '***') {
+                    apiKeyFromSecrets = secret.value;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Fallback to DOM if raw values are empty
+    const baseUrl = baseUrlFromRaw || (config?.urlSelector ? readControlValue(config.urlSelector) || '' : '');
+    const apiKey = apiKeyFromRaw || apiKeyFromSecrets || (keySelector ? readControlValue(keySelector) || '' : '');
+    const model = modelFromRaw || (config?.modelSelector ? readControlValue(asSelectorList(config.modelSelector)[0]) || '' : '');
+    
+    return { baseUrl, apiKey, model };
 }
 
 function buildImportedProfiles(profilesWithValues) {
@@ -573,10 +628,19 @@ async function importStConnectionProfiles() {
         ensureGroupMetadata();
         persist();
         goHome();
+        
         const missingKeyCount = importedProfiles.filter(profile => !normalizeText(profile.apiKey)).length;
-        setStatus(missingKeyCount
-            ? `已导入 ${importedProfiles.length} 条连接配置，其中 ${missingKeyCount} 条需要手动补充 API Key`
-            : `已从 SillyTavern 导入 ${importedProfiles.length} 条连接配置`);
+        const missingUrlCount = importedProfiles.filter(profile => !normalizeText(profile.baseUrl)).length;
+        
+        let message = `已导入 ${importedProfiles.length} 条连接配置`;
+        if (missingKeyCount > 0) {
+            message += `，其中 ${missingKeyCount} 条需要手动补充 API Key`;
+        }
+        if (missingUrlCount > 0) {
+            message += `，其中 ${missingUrlCount} 条需要手动补充 API 地址`;
+        }
+        
+        setStatus(message);
     } catch (error) {
         console.error(`${MODULE_NAME}: import ST connection profiles failed`, error);
         const message = error instanceof Error ? error.message : '导入 ST 连接配置失败';
@@ -711,7 +775,8 @@ function persist() {
     saveSettingsDebounced();
 }
 
-function getProfiles() {
+/** 获取所有保存的配置列表 */
+    {
     return getSettings().profiles;
 }
 
@@ -721,6 +786,14 @@ function getProfileById(profileId) {
 
 function getEditingProfile() {
     return uiState.editorDraft ? clone(uiState.editorDraft) : getProfileById(uiState.editingProfileId) ?? null;
+}
+
+function getModeIcon(mode) {
+    const icons = {
+        'chat-completions': '💬',
+        'text-generation': '📝',
+    };
+    return icons[mode] || '⚡';
 }
 
 function getProviderOptions(mode) {
@@ -743,7 +816,8 @@ function getGroupTitle(profile) {
     return normalizeText(profile.groupName) || normalizeText(profile.baseUrl) || '未命名分组';
 }
 
-function buildGroups() {
+/** 构建分组结构，按 API 地址分组 */
+    {
     ensureGroupMetadata();
     const groups = new Map();
 
@@ -780,7 +854,8 @@ function buildGroups() {
         });
 }
 
-function getActiveProfile() {
+/** 获取当前激活的配置 */
+    {
     return getProfileById(getSettings().activeProfileId);
 }
 
@@ -794,19 +869,21 @@ function findGroup(groupKey) {
 
 function getSuggestedModels(profile) {
     const currentProfile = profile ?? getEditingProfile() ?? defaultProfile();
+    
+    // 如果没有设置 API 地址，只显示当前配置已选的模型
     if (!normalizeText(currentProfile.baseUrl)) {
         return Array.from(new Set([...(currentProfile.selectedModels ?? []), normalizeText(currentProfile.model)].map(normalizeText).filter(Boolean)));
     }
 
+    // 只显示当前配置的模型 + API 实际返回的模型
+    // 不混入会话中其他配置的模型
     const fetchedModels = uiState.fetchedModels.map(normalizeText).filter(Boolean);
-    const existingModels = getProfiles()
-        .filter(item => normalizeText(item.baseUrl) === normalizeText(currentProfile.baseUrl)
-            && normalizeText(item.provider) === normalizeText(currentProfile.provider)
-            && normalizeText(item.mode) === normalizeText(currentProfile.mode))
-        .map(item => normalizeText(item.model))
-        .filter(Boolean);
+    const currentModels = [
+        ...(currentProfile.selectedModels ?? []),
+        normalizeText(currentProfile.model)
+    ].map(normalizeText).filter(Boolean);
 
-    return Array.from(new Set([...fetchedModels, ...existingModels, normalizeText(currentProfile.model)].filter(Boolean)));
+    return Array.from(new Set([...fetchedModels, ...currentModels].filter(Boolean)));
 }
 
 function getFetchModelsPayload(profile) {
@@ -856,7 +933,8 @@ function normalizeFetchedModels(responseData) {
         .filter(Boolean);
 }
 
-async function fetchModelsForEditor() {
+async /** 从 API 拉取可用模型列表 */
+    {
     const profile = readEditorProfile();
     if (!normalizeText(profile.baseUrl)) {
         uiState.editorDraft = profile;
@@ -873,11 +951,120 @@ async function fetchModelsForEditor() {
         return;
     }
 
-    const { url, payload } = getFetchModelsPayload(profile);
-    setStatus('正在拉取模型列表…');
+    setStatus('正在准备拉取模型列表…');
 
     try {
+        console.log(`[APM] Fetching models for provider: ${profile.provider}, baseUrl: ${profile.baseUrl}`);
+        
+        // For chat-completions, try to use the page's existing status check button
+        if (profile.mode === 'chat-completions') {
+            // Try clicking the connect button first, as it triggers SillyTavern's built-in model fetch
+            const connectButton = document.querySelector('#api_button_openai');
+            if (connectButton && !connectButton.disabled) {
+                setStatus('正在触发模型拉取…');
+                console.log(`[APM] Clicking connect button`);
+                connectButton.click();
+                
+                // Wait for SillyTavern to fetch and populate the model list
+                await sleep(3000);
+                
+                // Try to read models from DOM model select elements
+                const modelSelectors = providerConfig.modelSelector ? 
+                    (Array.isArray(providerConfig.modelSelector) ? providerConfig.modelSelector : [providerConfig.modelSelector]) : 
+                    [];
+                
+                let modelsFromDom = [];
+                for (const selector of modelSelectors) {
+                    const select = document.querySelector(selector);
+                    if (select) {
+                        const options = select.querySelectorAll('option');
+                        options.forEach(opt => {
+                            if (opt.value && opt.value !== opt.textContent) {
+                                modelsFromDom.push(opt.value);
+                            } else if (opt.value) {
+                                modelsFromDom.push(opt.value);
+                            }
+                        });
+                    }
+                }
+                
+                // 只从当前 provider 对应的 selector 读取模型，不要混用其他 provider 的模型
+                const currentProviderSelector = providerConfig.modelSelector;
+                if (currentProviderSelector) {
+                    const selectors = Array.isArray(currentProviderSelector) ? currentProviderSelector : [currentProviderSelector];
+                    for (const selector of selectors) {
+                        const select = document.querySelector(selector);
+                        if (select) {
+                            const options = select.querySelectorAll('option');
+                            options.forEach(opt => {
+                                if (opt.value && !modelsFromDom.includes(opt.value)) {
+                                    modelsFromDom.push(opt.value);
+                                }
+                            });
+                        }
+                    }
+                }
+                
+                if (modelsFromDom.length > 0) {
+                    console.log(`[APM] Found ${modelsFromDom.length} models from DOM`);
+                    uiState.fetchedModels = modelsFromDom;
+                    uiState.editorDraft = {
+                        ...profile,
+                        selectedModels: Array.from(new Set([...(profile.selectedModels ?? [])])),
+                    };
+                    uiState.modelPickerQuery = '';
+                    uiState.isModelPickerOpen = true;
+                    setStatus(`已拉取 ${modelsFromDom.length} 个模型`);
+                    render();
+                    return;
+                }
+                
+                // If we clicked connect but no models found, it might still be loading
+                setStatus('模型列表加载中，请稍候…');
+                await sleep(2000);
+                
+                // 重试时也只从当前 provider 的 selector 读取
+                modelsFromDom = [];
+                if (currentProviderSelector) {
+                    const selectors = Array.isArray(currentProviderSelector) ? currentProviderSelector : [currentProviderSelector];
+                    for (const selector of selectors) {
+                        const select = document.querySelector(selector);
+                        if (select) {
+                            const options = select.querySelectorAll('option');
+                            options.forEach(opt => {
+                                if (opt.value && !modelsFromDom.includes(opt.value)) {
+                                    modelsFromDom.push(opt.value);
+                                }
+                            });
+                        }
+                    }
+                }
+                
+                if (modelsFromDom.length > 0) {
+                    console.log(`[APM] Found ${modelsFromDom.length} models from DOM (retry)`);
+                    uiState.fetchedModels = modelsFromDom;
+                    uiState.editorDraft = {
+                        ...profile,
+                        selectedModels: Array.from(new Set([...(profile.selectedModels ?? [])])),
+                    };
+                    uiState.modelPickerQuery = '';
+                    uiState.isModelPickerOpen = true;
+                    setStatus(`已拉取 ${modelsFromDom.length} 个模型`);
+                    render();
+                    return;
+                }
+            }
+        }
+
+        // Fallback: Try direct API call
+        const { url, payload } = getFetchModelsPayload(profile);
+        setStatus('正在拉取模型列表…');
+        
+        console.log(`[APM] Direct API call to ${url}`, payload);
+        
         const responseData = await fetchJson(url, payload);
+        console.log(`[APM] Response:`, responseData);
+        
         const models = normalizeFetchedModels(responseData);
 
         if (!models.length) {
@@ -1494,7 +1681,7 @@ async function saveCurrentEditorProfile({ applyAfterSave = false } = {}) {
         const sameOrigin = normalizeText(item.baseUrl) === normalizeText(profile.baseUrl)
             && normalizeText(item.provider) === normalizeText(profile.provider)
             && normalizeText(item.mode) === normalizeText(profile.mode)
-            && String(item.apiKey ?? '') === String(profile.apiKey ?? '');
+            && normalizeText(item.groupName) === normalizeText(profile.groupName);
         return !(sameOrigin && modelsToSave.includes(normalizeText(item.model)) && item.id !== profile.id);
     });
 
@@ -1586,7 +1773,8 @@ function duplicateProfile(profileId) {
     setStatus('已复制配置');
 }
 
-async function applyProfile(profileId) {
+async /** 应用指定配置到 SillyTavern */
+    {
     const profile = getProfileById(profileId);
     if (!profile) {
         setStatus('没有找到要启用的配置', 'error');
@@ -2128,15 +2316,83 @@ function renderSuggestedModelPicker(profile, suggestedModels) {
     `;
 }
 
+
+/** 渲染配置详情抽屉 */
+    {
+    const profileId = uiState.drawerProfileId;
+    if (!profileId) {
+        return '';
+    }
+    const profile = getProfileById(profileId);
+    if (!profile) {
+        return '';
+    }
+    const activeProfile = getActiveProfile();
+    const isActive = activeProfile?.id === profileId;
+    const maskedKey = profile.apiKey ? '•'.repeat(Math.min(16, profile.apiKey.length)) : '';
+    return `<div class="api-profile-manager__drawer-overlay" data-action="close-drawer">
+        <div class="api-profile-manager__drawer" data-action="noop">
+            <div class="api-profile-manager__drawer-header">
+                <h3 class="api-profile-manager__drawer-title">配置详情</h3>
+                <button class="api-profile-manager__drawer-close" data-action="close-drawer">×</button>
+            </div>
+            <div class="api-profile-manager__drawer-content">
+                <div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">名称</div>
+                    <div class="api-profile-manager__drawer-value">${escapeHtml(profile.name || profile.model || '未命名')}</div>
+                </div>
+                <div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">类型</div>
+                    <div class="api-profile-manager__drawer-value">${escapeHtml(getModeLabel(profile.mode))} · ${escapeHtml(getProviderLabel(profile.mode, profile.provider))}</div>
+                </div>
+                <div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">模型</div>
+                    <div class="api-profile-manager__drawer-value">${escapeHtml(profile.model || '未设置')}</div>
+                </div>
+                <div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">API 地址</div>
+                    <div class="api-profile-manager__drawer-value api-profile-manager__drawer-value--break">${escapeHtml(profile.baseUrl || '未设置')}</div>
+                </div>
+                <div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">密钥</div>
+                    <div class="api-profile-manager__drawer-value api-profile-manager__drawer-value--masked">${profile.apiKey ? maskedKey : '<span class="api-profile-manager__drawer-empty">未设置</span>'}</div>
+                </div>
+                ${profile.selectedModels?.length ? `<div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">已选模型 (${profile.selectedModels.length})</div>
+                    <div class="api-profile-manager__drawer-models">${profile.selectedModels.map(m => `<span class="api-profile-manager__drawer-model-tag">${escapeHtml(m)}</span>`).join('')}</div>
+                </div>` : ''}
+                <div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">分组</div>
+                    <div class="api-profile-manager__drawer-value">${escapeHtml(profile.groupName || '默认分组')}</div>
+                </div>
+                <div class="api-profile-manager__drawer-section">
+                    <div class="api-profile-manager__drawer-label">更新时间</div>
+                    <div class="api-profile-manager__drawer-value">${escapeHtml(formatDateLabel(profile.updatedAt))}</div>
+                </div>
+            </div>
+            <div class="api-profile-manager__drawer-actions">
+                ${isActive ? '<span class="api-profile-manager__drawer-status api-profile-manager__drawer-status--active">当前正在使用</span>' : '<button class="api-profile-manager__btn api-profile-manager__btn--primary" data-action="apply-profile" data-profile-id="' + profile.id + '">启用此配置</button>'}
+                <button class="api-profile-manager__btn api-profile-manager__btn--ghost" data-action="edit-profile" data-profile-id="${profile.id}">编辑配置</button>
+                <button class="api-profile-manager__btn api-profile-manager__btn--danger" data-action="delete-profile" data-profile-id="${profile.id}">删除</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+
+/** 渲染主页视图（配置列表） */
 function renderHomeView() {
     const groups = buildGroups();
     if (!groups.length) {
         return `
             <section class="api-profile-manager__empty-state">
-                <div class="api-profile-manager__editor-block">
-                    <h3 class="api-profile-manager__section-title">还没添加接口配置</h3>
-                    <p class="api-profile-manager__empty" style="color: var(--apm-text-muted); font-size: 13px; margin: 12px 0;">新建个配置吧，同地址的多个模型会自动放在一个分组里。</p>
-                    <button class="api-profile-manager__button api-profile-manager__button--primary" data-action="new-profile">新建配置</button>
+                <div class="api-profile-manager__empty-content">
+                    <div class="api-profile-manager__empty-illustration">⚡</div>
+                    <h3 class="api-profile-manager__empty-title">还没有配置</h3>
+                    <p class="api-profile-manager__empty-text">添加你的第一个 API 配置开始使用</p>
+                    <button class="api-profile-manager__btn api-profile-manager__btn--primary" data-action="new-profile">
+                        <span>+</span> 添加配置
+                    </button>
                 </div>
             </section>
         `;
@@ -2144,72 +2400,86 @@ function renderHomeView() {
 
     const activeProfile = getActiveProfile();
     const activeIsStillCurrent = isActiveProfileStillCurrent();
+    
+    // 将所有分组和配置展平为列表
+    const flatList = [];
+    for (const group of groups) {
+        for (const profile of group.profiles) {
+            const isActive = activeIsStillCurrent && profile.id === activeProfile?.id;
+            const missingKey = !normalizeText(profile.apiKey) && !NATIVE_PROVIDERS.has(profile.provider);
+            flatList.push({
+                ...profile,
+                groupTitle: group.title,
+                isActive,
+                missingKey,
+            });
+        }
+    }
+
+    const selectedIds = uiState.selectedProfileIds;
+    const isAllSelected = flatList.length > 0 && flatList.every(item => selectedIds.includes(item.id));
+
     return `
         <section class="api-profile-manager__home">
-            <div class="api-profile-manager__section-head">
-                <h3 class="api-profile-manager__section-title">所有配置</h3>
-                <div style="display: flex; gap: 8px;">
-                    <button class="api-profile-manager__button api-profile-manager__button--ghost" data-action="open-tools">备份与设置</button>
-                    <button class="api-profile-manager__button api-profile-manager__button--primary" style="min-height: 32px; padding: 0 14px; font-size: 12px;" data-action="new-profile">+ 新建配置</button>
+            <div class="api-profile-manager__home-header">
+                <div class="api-profile-manager__header-left">
+                    <h2 class="api-profile-manager__home-title">API管家</h2>
+                    <span class="api-profile-manager__home-count">${flatList.length} 个配置</span>
+                </div>
+                <div class="api-profile-manager__header-actions">
+                    <button class="api-profile-manager__btn api-profile-manager__btn--ghost" data-action="open-tools">
+                        <span>⚙</span> 设置
+                    </button>
+                    <button class="api-profile-manager__btn api-profile-manager__btn--primary" data-action="new-profile">
+                        <span>+</span> 新建
+                    </button>
                 </div>
             </div>
-            <div class="api-profile-manager__group-list">
-                ${groups.map(group => {
-                    const isExpanded = uiState.activeGroupKey === group.key;
-                    const hasActiveProfile = activeIsStillCurrent && group.profiles.some(profile => profile.id === activeProfile?.id);
-                    const isPinned = Boolean(group.metadata?.pinned);
-                    const hasMissingKey = group.profiles.some(profile => !normalizeText(profile.apiKey) && !NATIVE_PROVIDERS.has(profile.provider));
-                    return `
-                        <article class="api-profile-manager__group-card api-profile-manager__glass-card ${isExpanded ? 'is-expanded' : ''} ${hasActiveProfile ? 'is-active' : ''}" data-group-key="${escapeHtml(group.key)}">
-                            <div class="api-profile-manager__group-top" data-action="toggle-group" data-group-key="${escapeHtml(group.key)}">
-                                <div class="api-profile-manager__group-main">
-                                    <div class="api-profile-manager__group-title-wrap">
-                                        <span class="api-profile-manager__group-arrow ${isExpanded ? 'is-expanded' : ''}" aria-hidden="true"></span>
-                                        <h3 class="api-profile-manager__group-name">${escapeHtml(group.title)}</h3>
-                                    </div>
-                                    ${hasMissingKey ? '<span class="api-profile-manager__group-state api-profile-manager__group-state--warning">缺少密钥</span>' : ''}
-                                </div>
-                                <div class="api-profile-manager__group-side">
-                                    <span class="api-profile-manager__group-state ${hasActiveProfile ? 'is-active' : ''}">${hasActiveProfile ? '已启用' : '未启用'}</span>
-                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="rename-group" data-group-key="${escapeHtml(group.key)}">修改分组</button>
-                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="toggle-group-pinned" data-group-key="${escapeHtml(group.key)}">${isPinned ? '取消置顶' : '置顶'}</button>
-                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="move-group-up" data-group-key="${escapeHtml(group.key)}">上移</button>
-                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="move-group-down" data-group-key="${escapeHtml(group.key)}">下移</button>
-                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--compact" data-action="new-profile-in-group" data-group-key="${escapeHtml(group.key)}">新增模型</button>
-                                    <button class="api-profile-manager__button api-profile-manager__button--ghost api-profile-manager__button--danger api-profile-manager__button--compact" data-action="delete-group" data-group-key="${escapeHtml(group.key)}">删除分组</button>
-                                </div>
-                            </div>
-                            ${isExpanded ? `
-                                <div class="api-profile-manager__drawer-list api-profile-manager__group-model-list">
-                                    <div class="api-profile-manager__group-model-summary">
-                                        <span class="api-profile-manager__group-model-count">模型列表（${group.profiles.length}）</span>
-                                    </div>
-                                    ${group.profiles.map(profile => {
-                                        const isActive = activeIsStillCurrent && profile.id === activeProfile?.id;
-                                        const isNameExpanded = Boolean(uiState.expandedModelRows[profile.id]);
-                                        const missingKey = !normalizeText(profile.apiKey) && !NATIVE_PROVIDERS.has(profile.provider);
-                                        return `
-                                        <article class="api-profile-manager__drawer-item api-profile-manager__drawer-item--row ${isActive ? 'is-active' : ''}">
-                                            <div class="api-profile-manager__drawer-main">
-                                                <button class="api-profile-manager__drawer-title api-profile-manager__drawer-title-button ${isNameExpanded ? 'is-expanded' : ''}" data-action="toggle-model-row" data-profile-id="${profile.id}" title="${escapeHtml(profile.name || profile.model || '未命名')}">
-                                                    ${escapeHtml(profile.name || profile.model || '未命名')}
-                                                </button>
-                                                ${missingKey ? '<p class="api-profile-manager__drawer-status api-profile-manager__drawer-status--warning">缺少密钥</p>' : ''}
-                                            </div>
-                                            <div class="api-profile-manager__drawer-actions">
-                                                <button class="api-profile-manager__profile-action ${isActive ? 'api-profile-manager__profile-action--status' : 'api-profile-manager__profile-action--primary'}" data-action="${isActive ? 'noop' : 'apply-profile'}" data-profile-id="${profile.id}">${isActive ? '已启用' : '应用'}</button>
-                                                <button class="api-profile-manager__profile-action" data-action="edit-profile" data-profile-id="${profile.id}">编辑</button>
-                                                <button class="api-profile-manager__profile-action api-profile-manager__profile-action--danger" data-action="delete-profile" data-profile-id="${profile.id}">删除</button>
-                                            </div>
-                                        </article>
-                                    `;
-                                    }).join('')}
-                                </div>
-                            ` : ''}
-                        </article>
-                    `;
-                }).join('')}
+            <div class="api-profile-manager__batch-bar">
+                <label class="api-profile-manager__checkbox-label">
+                    <input type="checkbox" class="api-profile-manager__checkbox" data-action="toggle-select-all" ${isAllSelected ? 'checked' : ''}>
+                    <span>全选</span>
+                </label>
+                ${selectedIds.length > 0 ? `
+                    <span class="api-profile-manager__batch-count">已选择 ${selectedIds.length} 项</span>
+                    <button class="api-profile-manager__btn api-profile-manager__btn--danger api-profile-manager__btn--small" data-action="batch-delete">删除</button>
+                    <button class="api-profile-manager__btn api-profile-manager__btn--ghost api-profile-manager__btn--small" data-action="clear-selection">取消</button>
+                ` : ''}
             </div>
+            <div class="api-profile-manager__config-list">
+                ${flatList.map(item => `
+                    <div class="api-profile-manager__config-card ${item.isActive ? 'is-active' : ''} ${selectedIds.includes(item.id) ? 'is-selected' : ''}" data-profile-id="${item.id}">
+                        <div class="api-profile-manager__config-card-checkbox">
+                            <input type="checkbox" class="api-profile-manager__checkbox" data-action="toggle-select" data-profile-id="${item.id}" ${selectedIds.includes(item.id) ? 'checked' : ''}>
+                        </div>
+                        <div class="api-profile-manager__config-card-main" data-action="open-profile-drawer" data-profile-id="${item.id}">
+                            <div class="api-profile-manager__config-card-icon">
+                                ${getModeIcon(item.mode)}
+                            </div>
+                            <div class="api-profile-manager__config-card-content">
+                                <div class="api-profile-manager__config-card-header">
+                                    <span class="api-profile-manager__config-card-name">${escapeHtml(item.model || item.name || '未命名')}</span>
+                                    ${item.isActive ? '<span class="api-profile-manager__config-card-badge">使用中</span>' : ''}
+                                </div>
+                                <div class="api-profile-manager__config-card-meta">
+                                    <span class="api-profile-manager__config-card-provider">${escapeHtml(getProviderLabel(item.mode, item.provider))}</span>
+                                    <span class="api-profile-manager__config-card-divider">·</span>
+                                    <span class="api-profile-manager__config-card-group">${escapeHtml(item.groupTitle)}</span>
+                                </div>
+                                ${item.missingKey ? '<div class="api-profile-manager__config-card-warning">⚠ 请补充 API Key</div>' : ''}
+                            </div>
+                        </div>
+                        <div class="api-profile-manager__config-card-actions">
+                            ${item.isActive 
+                                ? '<span class="api-profile-manager__status-text">已启用</span>'
+                                : `<button class="api-profile-manager__btn api-profile-manager__btn--small" data-action="apply-profile" data-profile-id="${item.id}">启用</button>`
+                            }
+                            <button class="api-profile-manager__btn-icon" data-action="open-profile-drawer" data-profile-id="${item.id}">⋯</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            ${renderProfileDrawer()}
         </section>
     `;
 }
@@ -2268,7 +2538,8 @@ function renderProviderOptions(selectedMode, selectedProvider) {
     return getProviderOptions(selectedMode).map(option => `<option value="${option.value}" ${option.value === selectedProvider ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('');
 }
 
-function renderEditorView() {
+/** 渲染编辑器视图 */
+    {
     const profile = getEditingProfile() ?? defaultProfile();
     const suggestedModels = getSuggestedModels(profile);
     const selectedModels = getUniqueSelectedModels(profile);
@@ -2354,7 +2625,8 @@ function renderEditorView() {
     `;
 }
 
-function renderToolsView() {
+/** 渲染工具与备份视图 */
+    {
     const settings = getSettings();
     return `
         <section class="api-profile-manager__tools">
@@ -2405,9 +2677,6 @@ function renderSheet() {
             <header class="api-profile-manager__hero">
                 <h2 class="api-profile-manager__title">${uiState.view === 'home' ? '接口列表' : uiState.view === 'group' ? '分组详情' : uiState.view === 'tools' ? '工具与备份' : '配置编辑'}</h2>
                 <div style="display: flex; gap: 12px; align-items: center;">
-                    <button class="api-profile-manager__button api-profile-manager__button--ghost" data-action="toggle-theme" style="padding: 0 10px;" title="切换日夜模式">
-                        <span style="font-size: 16px;">${uiState.isLightMode ? '🌙' : '☀️'}</span>
-                    </button>
                     <button class="api-profile-manager__sheet-close" data-action="close-panel" aria-label="关闭面板">×</button>
                 </div>
             </header>
@@ -2416,23 +2685,57 @@ function renderSheet() {
     `;
 }
 
-function renderLauncher() {
+/** 渲染 Launcher 入口按钮 */
+    {
     const activeProfile = getActiveProfile();
+    const groups = buildGroups();
     const stillCurrent = isActiveProfileStillCurrent();
     const showActive = activeProfile && stillCurrent;
+
+    // 构建分组下拉选项
+    const groupOptions = groups.map((group, index) => {
+        const isSelected = index === 0; // 默认选中第一个分组（或当前active配置所在分组）
+        return `<option value="${escapeHtml(group.key)}" ${isSelected ? 'selected' : ''}>${escapeHtml(group.title)}</option>`;
+    }).join('');
+
+    // 获取当前选中的分组（默认选第一个）
+    const selectedGroup = groups[0];
+    const profileOptions = selectedGroup ? selectedGroup.profiles.map(profile => {
+        const isActive = profile.id === activeProfile?.id;
+        const displayName = profile.model || profile.name || '未命名';
+        return `<option value="${profile.id}" ${isActive ? 'selected' : ''}>${escapeHtml(displayName)}</option>`;
+    }).join('') : '';
+
     return `
-        <div class="api-profile-manager__launcher-bar" data-action="open-panel" aria-label="API管家入口" role="button" tabindex="0">
-            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
-                <span class="api-profile-manager__fab-icon">⚡</span>
-                <div style="min-width: 0; display: flex; flex-direction: column; gap: 2px;">
-                    <span class="api-profile-manager__launcher-title">API 管家</span>
-                    ${showActive
-                        ? `<span class="api-profile-manager__launcher-active-hint"><span class="api-profile-manager__active-dot" style="width:5px;height:5px;vertical-align:middle;margin-right:4px;"></span>${escapeHtml(activeProfile.model || activeProfile.name || '已启用')}</span>`
-                        : `<span class="api-profile-manager__launcher-active-hint" style="color:var(--apm-text-muted);">点击管理接口配置</span>`
-                    }
+        <div class="api-profile-manager__launcher-wrapper">
+            <div class="api-profile-manager__launcher-bar" data-action="open-panel" aria-label="打开API管家面板" role="button" tabindex="0">
+                <div class="api-profile-manager__launcher-brand">
+                    <span class="api-profile-manager__launcher-icon">⚡</span>
+                    <span class="api-profile-manager__launcher-title">API管家</span>
+                </div>
+                <div class="api-profile-manager__launcher-actions">
+                    <button class="api-profile-manager__icon-btn" data-action="new-profile" title="新建配置">+</button>
+                    <button class="api-profile-manager__icon-btn" data-action="open-tools" title="设置">⚙</button>
+                    <span class="api-profile-manager__launcher-arrow">›</span>
                 </div>
             </div>
-            <span class="api-profile-manager__launcher-arrow">›</span>
+            <div class="api-profile-manager__quick-switch">
+                <div class="api-profile-manager__quick-switch-item">
+                    <label class="api-profile-manager__quick-switch-label">分组</label>
+                    <select class="api-profile-manager__quick-switch-select" data-action="change-quick-group">
+                        ${groupOptions}
+                    </select>
+                </div>
+                <div class="api-profile-manager__quick-switch-item">
+                    <label class="api-profile-manager__quick-switch-label">配置</label>
+                    <select class="api-profile-manager__quick-switch-select" data-action="change-quick-profile" data-group-key="${escapeHtml(selectedGroup?.key || '')}">
+                        ${profileOptions}
+                    </select>
+                </div>
+                <button class="api-profile-manager__quick-switch-apply" data-action="apply-quick-profile" ${!selectedGroup?.profiles.length ? 'disabled' : ''}>
+                    ${showActive ? '已启用' : '应用'}
+                </button>
+            </div>
         </div>
     `;
 }
@@ -2548,7 +2851,8 @@ function bindImportInput(input) {
     input.dataset.apmBound = 'true';
 }
 
-function render() {
+/** 重新渲染整个插件 UI */
+    {
     const root = ensureInlineRoot();
 
     if (!(root instanceof HTMLElement)) {
@@ -2560,22 +2864,14 @@ function render() {
     const existingPickerPanel = managerPopup?.dlg?.querySelector('.api-profile-manager__model-option-list--panel');
     const previousPickerPanelScrollTop = existingPickerPanel instanceof HTMLElement ? existingPickerPanel.scrollTop : uiState.pickerPanelScrollTop;
 
-    root.classList.toggle('light-theme', uiState.isLightMode);
-    root.classList.toggle('apm-light-theme', uiState.isLightMode);
-    root.closest('.api-profile-manager')?.classList.toggle('light-theme', uiState.isLightMode);
-    root.closest('.api-profile-manager')?.classList.toggle('apm-light-theme', uiState.isLightMode);
     root.innerHTML = renderLauncher();
     root.classList.remove('is-open');
 
     bindSurfaceEvents(root);
 
     if (managerPopup?.dlg?.isConnected) {
-        managerPopup.dlg.classList.toggle('light-theme', uiState.isLightMode);
-        managerPopup.dlg.classList.toggle('apm-light-theme', uiState.isLightMode);
         const content = managerPopup.dlg.querySelector('.api-profile-manager__popup-content');
         if (content instanceof HTMLElement) {
-            content.classList.toggle('light-theme', uiState.isLightMode);
-            content.classList.toggle('apm-light-theme', uiState.isLightMode);
             content.innerHTML = renderSheet();
             if (typeof previousPopupScrollTop === 'number') {
                 const nextPopupContent = managerPopup.dlg.querySelector('.api-profile-manager__content');
@@ -2597,7 +2893,7 @@ async function openManagerPopup() {
     setOpen(true);
 
     const wrapper = document.createElement('div');
-    wrapper.className = `api-profile-manager api-profile-manager__popup-content${uiState.isLightMode ? ' light-theme apm-light-theme' : ''}`;
+    wrapper.className = 'api-profile-manager api-profile-manager__popup-content';
     wrapper.innerHTML = renderSheet();
 
     managerPopup = new Popup(wrapper, POPUP_TYPE.TEXT, '', {
@@ -2620,7 +2916,8 @@ async function openManagerPopup() {
     });
 }
 
-async function handleClick(event) {
+async /** 处理点击事件（核心事件分发） */
+    {
     const target = event.target;
     if (!(target instanceof Element)) {
         return;
@@ -2676,11 +2973,6 @@ async function handleClick(event) {
             uiState.view = 'tools';
             render();
             break;
-        case 'toggle-theme':
-            syncEditorDraftFromForm();
-            uiState.isLightMode = !uiState.isLightMode;
-            render();
-            break;
         case 'fetch-models-placeholder':
             await fetchModelsForEditor();
             break;
@@ -2692,6 +2984,66 @@ async function handleClick(event) {
             break;
         case 'noop':
             break;
+        case 'open-profile-drawer':
+            uiState.drawerProfileId = profileId || target.closest('[data-profile-id]')?.dataset.profileId || null;
+            render();
+            break;
+        case 'close-drawer':
+            uiState.drawerProfileId = null;
+            render();
+            break;
+        case 'toggle-select': {
+            const id = profileId || target.closest('[data-profile-id]')?.dataset.profileId;
+            if (!id) break;
+            const idx = uiState.selectedProfileIds.indexOf(id);
+            if (idx >= 0) {
+                uiState.selectedProfileIds.splice(idx, 1);
+            } else {
+                uiState.selectedProfileIds.push(id);
+            }
+            render();
+            break;
+        }
+        case 'toggle-select-all': {
+            if (uiState.selectedProfileIds.length === 0) {
+                // 如果没有选择，选择所有
+                const groups = buildGroups();
+                uiState.selectedProfileIds = [];
+                for (const group of groups) {
+                    for (const profile of group.profiles) {
+                        uiState.selectedProfileIds.push(profile.id);
+                    }
+                }
+            } else {
+                // 如果已有选择，取消所有
+                uiState.selectedProfileIds = [];
+            }
+            render();
+            break;
+        }
+        case 'batch-delete': {
+            if (uiState.selectedProfileIds.length === 0) break;
+            const confirmed = confirm(`确定要删除选中的 ${uiState.selectedProfileIds.length} 个配置吗？此操作不可撤销。`);
+            if (!confirmed) break;
+            for (const id of uiState.selectedProfileIds) {
+                await deleteProfile(id);
+            }
+            uiState.selectedProfileIds = [];
+            render();
+            break;
+        }
+        case 'clear-selection':
+            uiState.selectedProfileIds = [];
+            render();
+            break;
+        case 'apply-quick-profile': {
+            const profileSelect = document.querySelector('[data-action="change-quick-profile"]');
+            const profileId = profileSelect?.value;
+            if (profileId) {
+                await applyProfile(profileId);
+            }
+            break;
+        }
         case 'new-profile':
             openEditor('', {});
             break;
@@ -2783,6 +3135,25 @@ function handleChange(event) {
     }
 
     event.stopPropagation();
+
+    // 处理快捷切换 - 分组下拉变化
+    if (target.dataset.action === 'change-quick-group') {
+        const selectedGroupKey = target.value;
+        const groups = buildGroups();
+        const selectedGroup = groups.find(g => g.key === selectedGroupKey);
+        const profileSelect = document.querySelector('[data-action="change-quick-profile"]');
+        
+        if (profileSelect && selectedGroup) {
+            const profileOptions = selectedGroup.profiles.map(profile => {
+                const displayName = profile.model || profile.name || '未命名';
+                return `<option value="${profile.id}">${escapeHtml(displayName)}</option>`;
+            }).join('');
+            
+            profileSelect.innerHTML = profileOptions;
+            profileSelect.dataset.groupKey = selectedGroupKey;
+        }
+        return;
+    }
 
     if (uiState.view === 'editor') {
         uiState.editorDraft = readEditorProfile();
